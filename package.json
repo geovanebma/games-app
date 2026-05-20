@@ -4,15 +4,26 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "test": "node --test ./src/utils/gameLogic.test.mjs",
+    "prebuild:android": "expo prebuild --platform android --no-install",
+    "build:android:apk": "npx eas-cli build -p android --profile preview-apk",
+    "build:android:aab": "npx eas-cli build -p android --profile production"
   },
   "dependencies": {
+    "@expo-google-fonts/sora": "^0.4.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.33",
+    "expo-font": "~14.0.11",
+    "expo-haptics": "~15.0.8",
+    "expo-localization": "~17.0.8",
+    "expo-navigation-bar": "~5.0.10",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0"
   },
   "private": true
 }
