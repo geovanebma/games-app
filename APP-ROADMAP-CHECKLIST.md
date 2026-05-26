@@ -151,6 +151,92 @@
 - [x] Aplicar roleta nos jogos de prompt/rodada.
 - [ ] Adicionar efeitos sonoros opcionais na roleta.
 
+### 4.15 Auditoria UI e UX dos 4 Jogos Atuais
+
+#### 4.15.1 Melhorias Gerais da Home
+- [x] Fazer a home parecer mais premium e menos "lista de cards".
+- [ ] Dar mais destaque visual ao logo oficial com area de respiro melhor.
+- [x] Ajustar proporcao do logo para nao parecer pequeno demais no topo.
+- [ ] Criar fundo com mais profundidade: glow, gradiente e textura leve.
+- [ ] Aumentar contraste entre hero, cards e atalhos secundarios.
+- [x] Melhorar hierarquia visual entre jogos principais e acoes secundarias.
+- [ ] Reduzir peso visual dos botoes pequenos de menu para nao competir com os jogos.
+- [ ] Dar feedback de toque mais evidente nos cards principais.
+- [ ] Adicionar microanimacao de pressao nos cards dos jogos.
+- [ ] Criar consistencia melhor entre espacos verticais da home.
+- [x] Fazer a area "Modo Festa" parecer CTA real e nao so um botao comum.
+- [ ] Dar mais identidade propria para cada card com arte, glow e composicao mais fortes.
+
+#### 4.15.2 Quem e o Impostor - Melhorias de UI e UX
+- [x] Destacar melhor a categoria escolhida antes do inicio da rodada.
+- [ ] Melhorar a tela de configuracao para parecer mais "jogo secreto" e menos formulario.
+- [ ] Dar mais destaque aos papeis principais: civil e impostor.
+- [x] Criar bloco visual mais forte para "quem comeca", abaixo do revelar final.
+- [x] Fazer a tela de revelacao parecer mais dramatica e exclusiva deste jogo.
+- [ ] Melhorar a leitura da palavra secreta para os civis com destaque maior.
+- [ ] Diferenciar visualmente o card do impostor do card dos civis sem entregar a resposta antes.
+- [ ] Adicionar suspense visual curto ao segurar para revelar.
+- [x] Melhorar o estado "segure para ver" para parecer mais interativo.
+- [ ] Ajustar espacamento da tela final para o botao revelar nao parecer perdido.
+- [ ] Criar reforco visual de que o impostor nao deve comecar.
+- [ ] Melhorar a tela final com revelacao da palavra e dos papeis em composicao mais bonita.
+
+#### 4.15.3 Cidade Dorme - Melhorias de UI e UX
+- [ ] Simplificar a tela de configuracao para parecer menos tecnica.
+- [x] Dar mais destaque visual aos papeis especiais: assassino, anjo e detetive.
+- [ ] Melhorar o agrupamento visual entre papeis, jogadores e botao de iniciar.
+- [x] Fazer o painel de narrador parecer uma central de rodada mais premium.
+- [ ] Melhorar a leitura de fase atual: noite, dia e rodada.
+- [ ] Criar feedback visual melhor para eliminados.
+- [ ] Destacar historico de eliminados de forma mais limpa.
+- [ ] Adicionar atmosfera mais sombria na tela final deste jogo.
+- [ ] Diferenciar melhor a identidade visual dele em relacao ao Impostor.
+- [ ] Criar transicao curta entre mudanca de fase para dar sensacao de andamento real.
+- [x] Melhorar a composicao do painel final para o narrador bater o olho e entender tudo.
+- [ ] Reduzir blocos que parecem genericos e trocar por blocos com cara de jogo de misterio.
+
+#### 4.15.4 Passa a Bomba - Melhorias de UI e UX
+- [x] Fazer a tela inicial do jogo parecer mais urgente e caotica.
+- [ ] Dar mais impacto visual para a roleta antes do sorteio da categoria.
+- [x] Melhorar a tela da bomba para parecer o centro total da rodada.
+- [ ] Trocar a bomba atual por ilustracao/animacao mais chamativa.
+- [ ] Fazer a explosao final ter mais impacto visual.
+- [x] Melhorar a mensagem "voce perdeu" para parecer um estado final do jogo e nao so texto solto.
+- [x] Destacar melhor o botao "jogar de novo" depois da explosao.
+- [ ] Dar mais identidade visual para categoria sorteada.
+- [ ] Melhorar o equilibrio entre espacos vazios e foco central da tela.
+- [ ] Criar pulse visual na bomba enquanto o tempo esta correndo.
+- [x] Adicionar dica visual curta de que a bomba deve ser passada de mao em mao.
+- [ ] Fazer a experiencia inteira parecer um mini-game rapido e nao apenas um sorteio com timer.
+
+#### 4.15.5 Verdade ou Desafio - Melhorias de UI e UX
+- [x] Destacar de forma muito clara de quem e a vez atual.
+- [ ] Melhorar a tela de configuracao para separar melhor verdade, desafio e intensidade.
+- [x] Dar mais impacto para o prompt sorteado.
+- [ ] Fazer a rodada parecer mais social e menos "lista de texto".
+- [x] Melhorar a visibilidade dos botoes de pontuacao do jogador atual.
+- [ ] Deixar mais claro que apenas o jogador da vez pode pontuar naquela rodada.
+- [x] Melhorar a diferenca visual entre verdade e desafio.
+- [ ] Criar estado visual mais ousado para desafios e mais calmo para verdades.
+- [ ] Dar mais destaque ao placar sem pesar a tela.
+- [ ] Melhorar fluxo de avancar para o proximo jogador sem confusao.
+- [ ] Criar fechamento de rodada mais bonito quando a frase termina.
+- [ ] Fazer a tela do prompt sorteado parecer um card central premium.
+
+#### 4.15.6 Melhorias Gerais de UX Dentro dos 4 Jogos
+- [x] Padronizar melhor o tamanho e o respiro dos botoes primarios.
+- [ ] Padronizar o espacamento entre header, bloco principal e CTA final.
+- [ ] Melhorar contraste de textos secundarios em fundos escuros.
+- [x] Garantir que toda tela importante tenha um unico foco visual dominante.
+- [ ] Evitar blocos com aparencia muito parecida entre jogos diferentes.
+- [x] Fazer cada jogo ter uma cor, ritmo e composicao realmente proprios.
+- [ ] Ajustar melhor o tamanho de fontes em celulares menores.
+- [ ] Revisar textos vazando em ingles e deixar 100 por cento coerente em portugues.
+- [ ] Criar estados vazios e de erro mais bonitos.
+- [ ] Melhorar feedback visual de toque, segurar, revelar, concluir e reiniciar.
+- [ ] Revisar cada tela pensando em uso real em grupo, com pouca paciencia e pressa para jogar.
+- [ ] Fazer uma passada final de polish visual para dar sensacao de app pronto para loja.
+
 ### 4.5 Novos jogos para o futuro
 - [ ] Adicionar Detetive Oculto.
 - [ ] Adicionar Sabotador da Nave.

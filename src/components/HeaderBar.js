@@ -5,18 +5,20 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 function HeaderBarComponent({ title, onBack, onHome, onHelp, isRTL = false, backLabel = 'Back', homeLabel = 'Home', helpLabel = 'Help' }) {
   return (
     <View style={[styles.headerBar, isRTL && styles.headerBarRtl]}>
-      <Pressable accessibilityRole="button" accessibilityLabel={backLabel} style={styles.navButton} onPress={onBack}>
-        <MaterialCommunityIcons color="#fff7ed" name={isRTL ? 'arrow-right' : 'arrow-left'} size={18} />
-      </Pressable>
-      <Text style={styles.headerTitle} numberOfLines={1}>
-        {title}
-      </Text>
-      <View style={[styles.rightActions, isRTL && styles.rightActionsRtl]}>
+      <View style={[styles.leftActions, isRTL && styles.leftActionsRtl]}>
         {onHelp ? (
           <Pressable accessibilityRole="button" accessibilityLabel={helpLabel} style={styles.navButton} onPress={onHelp}>
             <MaterialCommunityIcons color="#fff7ed" name="help-circle-outline" size={18} />
           </Pressable>
         ) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={backLabel} style={styles.navButton} onPress={onBack}>
+          <MaterialCommunityIcons color="#fff7ed" name={isRTL ? 'arrow-right' : 'arrow-left'} size={18} />
+        </Pressable>
+      </View>
+      <Text style={styles.headerTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      <View style={[styles.rightActions, isRTL && styles.rightActionsRtl]}>
         <Pressable accessibilityRole="button" accessibilityLabel={homeLabel} style={styles.navButton} onPress={onHome}>
           <MaterialCommunityIcons color="#fff7ed" name="home-outline" size={18} />
         </Pressable>
@@ -40,6 +42,13 @@ const styles = StyleSheet.create({
   rightActions: {
     flexDirection: 'row',
     gap: 8,
+  },
+  leftActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  leftActionsRtl: {
+    flexDirection: 'row-reverse',
   },
   rightActionsRtl: {
     flexDirection: 'row-reverse',

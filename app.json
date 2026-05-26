@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/party-games-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },
@@ -22,7 +22,7 @@
     "android": {
       "package": "com.geovane.partygames",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#020617"
       },
       "edgeToEdgeEnabled": true

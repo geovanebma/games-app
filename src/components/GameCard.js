@@ -15,8 +15,9 @@ function GameCardComponent({ game, onPress, isRTL = false, variant = 'list' }) {
         isGrid ? styles.gridCard : styles.listCard,
         isRTL && styles.cardRtl,
         {
-          borderColor: `${game.themeColor}66`,
+          borderColor: `${game.themeColor}99`,
           backgroundColor: game.accentColor,
+          shadowColor: game.themeColor,
         },
       ]}
     >
@@ -44,6 +45,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 24,
     borderWidth: 1,
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   listCard: {
     minHeight: 96,
@@ -61,7 +66,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     justifyContent: 'space-between',
     gap: 10,
-    backgroundColor: '#11111a',
+    backgroundColor: '#0d0b17',
   },
   cardRtl: {
     flexDirection: 'row-reverse',
@@ -104,8 +109,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Sora_800ExtraBold',
   },
   titleGrid: {
-    fontSize: 26,
-    lineHeight: 26,
+    fontSize: 20,
+    lineHeight: 23,
     textTransform: 'uppercase',
   },
   tag: {

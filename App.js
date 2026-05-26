@@ -6,7 +6,7 @@ import { useFonts } from 'expo-font';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, BackHandler, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './src/components/GameCard';
 import { HeaderBar } from './src/components/HeaderBar';
@@ -105,12 +105,14 @@ function AppContent() {
   const [activeScorePlayerIndex, setActiveScorePlayerIndex] = useState(0);
   const [impostorStarterName, setImpostorStarterName] = useState('');
   const [bombExploded, setBombExploded] = useState(false);
+  const [bombPassCount, setBombPassCount] = useState(0);
   const [truthOrDareTimedOut, setTruthOrDareTimedOut] = useState(false);
   const [diagnostics, setDiagnostics] = useState([]);
   const [analytics, setAnalytics] = useState([]);
   const [notice, setNotice] = useState(null);
   const [gameHelpVisible, setGameHelpVisible] = useState(false);
-  const [rouletteState, setRouletteState] = useState({ visible: false, title: '', items: [], currentIndex: 0, accent: '#f97316' });
+  const [homeMenuOpen, setHomeMenuOpen] = useState(false);
+  const [rouletteState, setRouletteState] = useState({ visible: false, title: '', items: [], currentIndex: 0, accent: '#fb4ecb' });
   const revealScale = useRef(new Animated.Value(1)).current;
   const revealOpacity = useRef(new Animated.Value(1)).current;
   const screenOpacity = useRef(new Animated.Value(1)).current;
@@ -377,7 +379,7 @@ function AppContent() {
     }, 1000);
 
     return () => clearInterval(intervalId);
-  }, [screen, selectedGame?.id, selectedGameOptions.timer, currentRoundKey, currentScorePlayer?.id, rouletteState.visible]);
+  }, [screen, selectedGame?.id, selectedGameOptions.timer, currentRoundKey, rouletteState.visible]);
 
   useEffect(() => {
     const shouldPulseBomb =
@@ -436,6 +438,16 @@ function AppContent() {
     NavigationBar.setVisibilityAsync(hidden ? 'hidden' : 'visible').catch(() => { });
   }, [screen]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (history.length === 0 || screen === 'home') return false;
+      goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [history, screen]);
+
   function triggerHaptic(kind = 'selection') {
     if (!appSettings.haptics) return;
     if (kind === 'success') return Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
@@ -446,6 +458,7 @@ function AppContent() {
   function goTo(nextScreen) {
     triggerHaptic('selection');
     setGameHelpVisible(false);
+    setHomeMenuOpen(false);
     trackEvent('navigate', `${screen}->${nextScreen}`);
     setHistory((current) => [...current, screen]);
     setScreen(nextScreen);
@@ -454,6 +467,7 @@ function AppContent() {
   function goBack() {
     triggerHaptic('selection');
     setGameHelpVisible(false);
+    setHomeMenuOpen(false);
     setHistory((current) => {
       const nextHistory = [...current];
       const previous = nextHistory.pop();
@@ -476,6 +490,7 @@ function AppContent() {
     setScoreRound({ current: 1, letter: 'A', prompt: 'Animais', detail: '', type: '' });
     setActiveScorePlayerIndex(0);
     setBombExploded(false);
+    setBombPassCount(0);
     setTruthOrDareTimedOut(false);
     setRoundSecondsLeft(null);
     setCurrentRoundKey(null);
@@ -486,6 +501,7 @@ function AppContent() {
     setScreen('home');
     setSelectedGameId(null);
     setGameHelpVisible(false);
+    setHomeMenuOpen(false);
     resetRoundState();
   }
 
@@ -858,17 +874,21 @@ function AppContent() {
     if (selectedGame?.id !== 'passa-a-bomba' || bombExploded || assignments.length === 0) return;
     triggerHaptic('selection');
     setActiveScorePlayerIndex((current) => (current + 1) % assignments.length);
+    setRoundSecondsLeft((current) => (current == null ? current : current + 6));
+    setBombPassCount((current) => current + 1);
   }
 
   async function advanceScoreRound() {
+    if (!currentRoundKey && selectedGame?.id === 'verdade-ou-desafio') return;
     triggerHaptic('selection');
     if (currentRoundKey) saveRoundToHistory();
     setRoundSecondsLeft(null);
     setTruthOrDareTimedOut(false);
     const nextBoardState = getBoardPromptState(selectedGame?.id);
-    await runRoulette(t('draw'), nextBoardState.prompt, selectedGame?.themeColor ?? '#f97316', getRouletteCandidates(selectedGame?.id));
+    await runRoulette(t('draw'), nextBoardState.prompt, selectedGame?.themeColor ?? '#fb4ecb', getRouletteCandidates(selectedGame?.id));
     setCurrentRoundKey(`${selectedGame?.id ?? 'score'}-${Date.now()}`);
     setBombExploded(false);
+    if (selectedGame?.id === 'passa-a-bomba') setBombPassCount(0);
     if (selectedGame?.id === 'verdade-ou-desafio' && assignments.length) {
       setActiveScorePlayerIndex((current) => (current + 1) % assignments.length);
     }
@@ -883,6 +903,14 @@ function AppContent() {
     triggerHaptic('selection');
     trackEvent('toggle_setting', key);
     setAppSettings((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  function finishTruthOrDareRound() {
+    if (selectedGame?.id !== 'verdade-ou-desafio' || !currentRoundKey) return;
+    triggerHaptic('success');
+    saveRoundToHistory();
+    setRoundSecondsLeft(null);
+    setTruthOrDareTimedOut(false);
   }
 
   function finishOnboarding() {
@@ -944,6 +972,7 @@ function AppContent() {
       });
       setActiveScorePlayerIndex(0);
       setBombExploded(false);
+      if (selectedGame.id === 'passa-a-bomba') setBombPassCount(0);
       setCurrentRoundKey(`${selectedGame.id}-${Date.now()}`);
       setShowFinalRoles(false);
       goTo('final');
@@ -1209,7 +1238,7 @@ function AppContent() {
       <View style={[styles.safeArea, { backgroundColor: palette.screen, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
         <StatusBar style="light" />
         <View style={[styles.container, styles.centeredScreen, { backgroundColor: palette.screen }]}>
-          <MaterialCommunityIcons color="#f97316" name="cards-playing-outline" size={42} />
+          <Image resizeMode="contain" source={require('./assets/party-games-logo.png')} style={styles.loadingLogo} />
           <Text style={[styles.loadingText, { color: palette.text }]}>{t('loading')}</Text>
         </View>
       </View>
@@ -1247,6 +1276,37 @@ function AppContent() {
         <Animated.View style={{ flex: 1, opacity: screenOpacity, transform: [{ translateY: screenTranslate }] }}>
           {screen === 'home' && (
             <ScrollView contentContainerStyle={[styles.homeScrollContent, { paddingBottom: Math.max(insets.bottom + 28, 40) }]}>
+              <View style={[styles.homeTopActions, isRTL && styles.rowReverse]}>
+                <SmallMenuButton icon="diamond-stone" label={t('premium')} onPress={() => { trackEvent('premium_open', 'home'); goTo('premium'); }} isRTL={isRTL} compact />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Menu"
+                  accessibilityState={{ expanded: homeMenuOpen }}
+                  style={styles.hamburgerButton}
+                  onPress={() => {
+                    triggerHaptic('selection');
+                    setHomeMenuOpen((current) => !current);
+                  }}
+                >
+                  <MaterialCommunityIcons color="#f8fafc" name={homeMenuOpen ? 'close' : 'menu'} size={24} />
+                </Pressable>
+              </View>
+
+              {homeMenuOpen ? (
+                <View style={[styles.homeMenuPanel, isRTL && styles.homeMenuPanelRTL]}>
+                  <SmallMenuButton icon="diamond-stone" label={t('premium')} onPress={() => { trackEvent('premium_open', 'home_menu'); goTo('premium'); }} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="chart-line" label={t('analytics')} onPress={() => goTo('analytics')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="help-circle-outline" label={t('help')} onPress={() => goTo('help')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="file-document-outline" label={t('terms')} onPress={() => goTo('terms')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="shield-check-outline" label={t('privacy')} onPress={() => goTo('privacy')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="cog-outline" label={t('settings')} onPress={() => goTo('settings')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="information-outline" label={t('about')} onPress={() => goTo('about')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="history" label={t('history')} onPress={() => goTo('history')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="trophy-outline" label={t('stats')} onPress={() => goTo('stats')} isRTL={isRTL} menuItem />
+                  <SmallMenuButton icon="stethoscope" label={t('diagnostics')} onPress={() => goTo('diagnostics')} isRTL={isRTL} menuItem />
+                </View>
+              ) : null}
+
               <View style={styles.homeHeroLogoWrap}>
                 <Image resizeMode="contain" source={require('./assets/party-games-logo.png')} style={styles.homeHeroLogo} />
               </View>
@@ -1255,19 +1315,6 @@ function AppContent() {
                 {visibleGames.map((game) => (
                   <GameCard key={game.id} game={game} isRTL={isRTL} variant="grid" onPress={() => openGame(game.id)} />
                 ))}
-              </View>
-
-              <View style={[styles.quickLinks, isRTL && styles.rowReverse]}>
-                <SmallMenuButton icon="diamond-stone" label={t('premium')} onPress={() => { trackEvent('premium_open', 'home'); goTo('premium'); }} isRTL={isRTL} />
-                <SmallMenuButton icon="chart-line" label={t('analytics')} onPress={() => goTo('analytics')} isRTL={isRTL} />
-                <SmallMenuButton icon="help-circle-outline" label={t('help')} onPress={() => goTo('help')} isRTL={isRTL} />
-                <SmallMenuButton icon="file-document-outline" label={t('terms')} onPress={() => goTo('terms')} isRTL={isRTL} />
-                <SmallMenuButton icon="shield-check-outline" label={t('privacy')} onPress={() => goTo('privacy')} isRTL={isRTL} />
-                <SmallMenuButton icon="cog-outline" label={t('settings')} onPress={() => goTo('settings')} isRTL={isRTL} />
-                <SmallMenuButton icon="information-outline" label={t('about')} onPress={() => goTo('about')} isRTL={isRTL} />
-                <SmallMenuButton icon="history" label={t('history')} onPress={() => goTo('history')} isRTL={isRTL} />
-                <SmallMenuButton icon="trophy-outline" label={t('stats')} onPress={() => goTo('stats')} isRTL={isRTL} />
-                <SmallMenuButton icon="stethoscope" label={t('diagnostics')} onPress={() => goTo('diagnostics')} isRTL={isRTL} />
               </View>
 
               {!appSettings.onboardingSeen && (
@@ -1311,20 +1358,9 @@ function AppContent() {
                 <View style={styles.focusText}>
                   <Text style={[styles.focusTitle, isRTL && styles.textRight, { color: palette.text }]}>{selectedGame.shortTitle}</Text>
                   <Text style={[styles.focusMeta, isRTL && styles.textRight, { color: palette.textMuted }]}>{selectedPlayers.length} {t('playersCount')}</Text>
-                  {roomLabel ? <Text style={[styles.focusMeta, isRTL && styles.textRight, { color: selectedGame.themeColor }]}>{roomLabel}</Text> : null}
-                </View>
-                <View style={[styles.gameModeBadge, { backgroundColor: selectedGame.accentColor }]}>
-                  <Text style={styles.gameModeBadgeText}>{selectedGame.homeTag}</Text>
                 </View>
               </View>
-              <View style={[styles.block, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-                <Text style={[styles.blockTitle, { color: palette.text }]}>{t('summary')}</Text>
-                <Text style={[styles.infoText, { color: palette.textMuted }]}>{getGameBrief()}</Text>
-              </View>
-              <View style={[styles.wordBanner, isRTL && styles.rowReverse]}>
-                <MaterialCommunityIcons color={selectedGame.themeColor} name={selectedGame.icon} size={18} />
-                <Text style={[styles.wordBannerText, isRTL && styles.textRight]}>{getIntroLine()}</Text>
-              </View>
+
               {selectedGame.id === 'impostor' && (
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('category')}</Text>
@@ -1334,9 +1370,6 @@ function AppContent() {
                       {localizedImpostorCategories.map((category) => <CategoryChip key={category.id} active={impostorCategoryByGame.impostor === category.id} label={category.localizedLabel} onPress={() => setImpostorCategoryByGame((current) => ({ ...current, impostor: category.id }))} isRTL={isRTL} />)}
                     </View>
                   </ScrollView>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{getGameBrief()}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'cidade-dorme' && (
@@ -1351,8 +1384,8 @@ function AppContent() {
                   </View>
                   <View style={[styles.inlineList, isRTL && styles.rowReverseWrap]}>
                     {selectedGame.roles.map((role) => (
-                      <View key={role.id} style={[styles.signalChip, isRTL && styles.rowReverse]}>
-                        <MaterialCommunityIcons color="#86efac" name={getRoleIcon(role.id)} size={16} />
+                      <View key={role.id} style={[styles.signalChip, styles.signalChipCity, isRTL && styles.rowReverse]}>
+                        <MaterialCommunityIcons color="#c084fc" name={getRoleIcon(role.id)} size={16} />
                         <Text style={[styles.signalChipText, isRTL && styles.textRight]}>{getCityRoleSignal(role.id)}</Text>
                       </View>
                     ))}
@@ -1367,9 +1400,6 @@ function AppContent() {
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                       {['20', '30', '45'].map((time) => <ChoiceChip key={time} active={selectedGameOptions.timer === time} label={`${time}s`} onPress={() => setGameOption('passa-a-bomba', 'timer', time)} isRTL={isRTL} />)}
                     </View>
-                  </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.bomb')}</Text>
                   </View>
                 </View>
               )}
@@ -1388,9 +1418,6 @@ function AppContent() {
                       {['30', '45', '60'].map((time) => <ChoiceChip key={time} active={selectedGameOptions.timer === time} label={`${time}s`} onPress={() => setGameOption('palavra-proibida', 'timer', time)} isRTL={isRTL} />)}
                     </View>
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.taboo')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'quem-sou-eu' && (
@@ -1399,9 +1426,6 @@ function AppContent() {
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['personagens', 'animais', 'profissoes'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={category} onPress={() => setGameOption('quem-sou-eu', 'category', category)} isRTL={isRTL} />)}
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.identity')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'eu-nunca' && (
@@ -1409,9 +1433,6 @@ function AppContent() {
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['misto', 'familia', 'amigos', 'casal', 'festa'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('eu-nunca', 'mode', mode)} isRTL={isRTL} />)}
-                  </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.never')}</Text>
                   </View>
                 </View>
               )}
@@ -1436,9 +1457,6 @@ function AppContent() {
                       {['misto', 'amigos', 'familia', 'casal'].map((audience) => <ChoiceChip key={audience} active={selectedGameOptions.audience === audience} label={audience} onPress={() => setGameOption('verdade-ou-desafio', 'audience', audience)} isRTL={isRTL} />)}
                     </View>
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.truthdare')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'batalha-de-frases' && (
@@ -1458,9 +1476,6 @@ function AppContent() {
                       {['3', '5', '7'].map((rounds) => <ChoiceChip key={rounds} active={selectedGameOptions.rounds === rounds} label={rounds} onPress={() => setGameOption('batalha-de-frases', 'rounds', rounds)} isRTL={isRTL} />)}
                     </View>
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.pickup')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'se-fosse-voce' && (
@@ -1468,9 +1483,6 @@ function AppContent() {
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['misto', 'festa', 'casal', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('se-fosse-voce', 'mode', mode)} isRTL={isRTL} />)}
-                  </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.whatif')}</Text>
                   </View>
                 </View>
               )}
@@ -1480,9 +1492,6 @@ function AppContent() {
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['divertido', 'caotico', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('quem-da-mesa', 'mode', mode)} isRTL={isRTL} />)}
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.tablewho')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'pergunta-pesada' && (
@@ -1491,9 +1500,6 @@ function AppContent() {
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['leve', 'intensa'].map((intensity) => <ChoiceChip key={intensity} active={selectedGameOptions.intensity === intensity} label={intensity} onPress={() => setGameOption('pergunta-pesada', 'intensity', intensity)} isRTL={isRTL} />)}
                   </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.deepq')}</Text>
-                  </View>
                 </View>
               )}
               {selectedGame.id === 'quem-mais-provavel' && (
@@ -1501,9 +1507,6 @@ function AppContent() {
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                     {['amigos', 'familia', 'casal'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('quem-mais-provavel', 'mode', mode)} isRTL={isRTL} />)}
-                  </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.likely')}</Text>
                   </View>
                 </View>
               )}
@@ -1527,13 +1530,6 @@ function AppContent() {
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
                       {['livre', 'animais', 'objetos'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={category} onPress={() => setGameOption('mimica-relampago', 'category', category)} isRTL={isRTL} />)}
                     </View>
-                  </View>
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>{t('gameBrief.charades')}</Text>
-                  </View>
-                  <View style={[styles.footerBlock, isRTL && styles.rowReverse]}>
-                    <MiniStat label={t('timer')} value={`${selectedGameOptions.timer ?? '60'}s`} isRTL={isRTL} />
-                    <MiniStat label={t('round')} value={selectedGameOptions.rounds ?? '6'} isRTL={isRTL} />
                   </View>
                 </View>
               )}
@@ -1574,11 +1570,6 @@ function AppContent() {
                 ))}
                 {!AUTO_SYNC_ROLE_GAMES.includes(selectedGame.id) ? <IconLabelButton icon="account-plus-outline" label={t('add')} onPress={addPlayer} isRTL={isRTL} /> : null}
               </View>
-              <View style={[styles.footerBlock, isRTL && styles.rowReverse]}>
-                <MiniStat label={t('rolesLabel')} value={String(totalRoles)} isRTL={isRTL} />
-                <MiniStat label={t('playersLabel')} value={String(selectedPlayers.length)} isRTL={isRTL} />
-                <MiniStat label={t('summary')} value={getFinalSummary()} isRTL={isRTL} />
-              </View>
               <View style={[styles.actionRow, isRTL && styles.rowReverse]}>
                 <IconLabelButton icon="backup-restore" label={t('restore')} onPress={restorePreset} isRTL={isRTL} />
                 <IconLabelButton icon="account-switch-outline" label={t('restoreRoles')} onPress={restoreRolesOnly} isRTL={isRTL} />
@@ -1600,7 +1591,7 @@ function AppContent() {
                   <Text style={styles.blockTitle}>{t('howToPlay')}</Text>
                   {gameHelpItems.map((item) => (
                     <View key={item} style={[styles.infoRow, isRTL && styles.rowReverse]}>
-                      <MaterialCommunityIcons color={selectedGame?.themeColor ?? '#f97316'} name="help-circle-outline" size={18} />
+                      <MaterialCommunityIcons color={selectedGame?.themeColor ?? '#fb4ecb'} name="help-circle-outline" size={18} />
                       <Text style={[styles.infoText, isRTL && styles.textRight]}>{item}</Text>
                     </View>
                   ))}
@@ -1609,14 +1600,16 @@ function AppContent() {
               <View style={[styles.revealCounter, isRTL && styles.rowReverse]}>
                 <MiniStat label={t('turn')} value={`${currentRevealIndex + 1}/${assignments.length}`} isRTL={isRTL} />
               </View>
-              <Animated.View style={[styles.revealCard, { borderColor: selectedGame?.themeColor ?? '#f97316' }, { opacity: revealOpacity, transform: [{ scale: revealScale }] }]}>
+              <Animated.View style={[styles.revealCard, { borderColor: selectedGame?.themeColor ?? '#fb4ecb' }, { opacity: revealOpacity, transform: [{ scale: revealScale }] }]}>
+                <View style={[styles.revealCardGlow, { backgroundColor: `${selectedGame?.themeColor ?? '#fb4ecb'}22` }]} />
                 <View style={[styles.revealBadge, isRTL && styles.rowReverse, { backgroundColor: selectedGame?.accentColor ?? '#000000' }]}>
                   <MaterialCommunityIcons color="#e2e8f0" name={selectedGame?.icon ?? 'cards-playing-outline'} size={16} />
                   <Text style={styles.revealBadgeText}>{selectedGame?.shortTitle}</Text>
                 </View>
                 <Text style={[styles.revealPlayerName, isRTL && styles.textRight]}>{currentAssignment.name}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel={`${t('revealRoleOf')} ${currentAssignment.name}`} accessibilityHint={t('revealHoldHint')} style={styles.holdButton} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${t('revealRoleOf')} ${currentAssignment.name}`} accessibilityHint={t('revealHoldHint')} style={[styles.holdButton, selectedGame?.id === 'impostor' && styles.holdButtonImpostor]} onPressIn={handlePressIn} onPressOut={handlePressOut}>
                   <Text style={[styles.holdButtonText, isRTL && styles.textRight]}>{selectedGame?.revealHint ?? t('revealHintButton')}</Text>
+                  <Text style={[styles.holdButtonSubtext, isRTL && styles.textRight]}>{cardPressed ? t('reveal') : t('revealHintButton')}</Text>
                   {cardPressed ? (
                     <View style={styles.revealContent}>
                       {selectedGame?.id === 'quem-sou-eu' ? (
@@ -1648,7 +1641,7 @@ function AppContent() {
                   <Text style={styles.blockTitle}>{t('howToPlay')}</Text>
                   {gameHelpItems.map((item) => (
                     <View key={item} style={[styles.infoRow, isRTL && styles.rowReverse]}>
-                      <MaterialCommunityIcons color={selectedGame?.themeColor ?? '#f97316'} name="help-circle-outline" size={18} />
+                      <MaterialCommunityIcons color={selectedGame?.themeColor ?? '#fb4ecb'} name="help-circle-outline" size={18} />
                       <Text style={[styles.infoText, isRTL && styles.textRight]}>{item}</Text>
                     </View>
                   ))}
@@ -1661,22 +1654,26 @@ function AppContent() {
                       <MaterialCommunityIcons color="#fff7ed" name="eye-outline" size={18} />
                       <Text style={styles.primaryButtonText}>{t('reveal')}</Text>
                     </Pressable>
+                  ) : selectedGame?.id === 'verdade-ou-desafio' && !currentRoundKey ? (
+                    <Pressable style={styles.primaryButton} onPress={restartSelectedGame}>
+                      <MaterialCommunityIcons color="#fff7ed" name="restart" size={18} />
+                      <Text style={styles.primaryButtonText}>{t('playAgain')}</Text>
+                    </Pressable>
                   ) : (
                     <Pressable style={styles.primaryButton} onPress={advanceScoreRound}>
                       <MaterialCommunityIcons color="#fff7ed" name="skip-next-circle-outline" size={18} />
                       <Text style={styles.primaryButtonText}>{t('next')}</Text>
                     </Pressable>
                   )}
-                  {!isBombGame(selectedGame?.id) ? <IconLabelButton icon="restart" label={t('playAgain')} onPress={restartSelectedGame} isRTL={isRTL} /> : null}
-                </View>
-              ) : null}
-              {selectedGame?.id !== 'passa-a-bomba' && selectedGame?.id !== 'verdade-ou-desafio' ? (
-                <View style={styles.block}>
-                  <MiniStat label={t('resultSummary')} value={getFinalSummary()} isRTL={isRTL} />
+                  {selectedGame?.id === 'verdade-ou-desafio' && currentRoundKey ? (
+                    <IconLabelButton icon="flag-checkered" label={t('finish')} onPress={finishTruthOrDareRound} isRTL={isRTL} />
+                  ) : !isBombGame(selectedGame?.id) && !(selectedGame?.id === 'verdade-ou-desafio' && !currentRoundKey) ? (
+                    <IconLabelButton icon="restart" label={t('playAgain')} onPress={restartSelectedGame} isRTL={isRTL} />
+                  ) : null}
                 </View>
               ) : null}
               {selectedGame?.id === 'cidade-dorme' && (
-                <View style={styles.block}>
+                <View style={[styles.block, styles.cityBoardBlock]}>
                   <Text style={styles.blockTitle}>{t('board')}</Text>
                   <View style={[styles.footerBlock, isRTL && styles.rowReverse]}>
                     <MiniStat label={t('phase')} value={`${cityRound.phase === 'dia' ? t('day') : t('night')} ${cityRound.cycle}`} isRTL={isRTL} />
@@ -1689,11 +1686,6 @@ function AppContent() {
                     onPress={advanceCityPhase}
                     isRTL={isRTL}
                   />
-                  <View style={styles.narrativeCard}>
-                    <Text style={styles.narrativeText}>
-                      {cityRound.phase === 'noite' ? t('cityNarrative.classicNight') : t('cityNarrative.classicDay')}
-                    </Text>
-                  </View>
                   <View style={[styles.inlineList, isRTL && styles.rowReverseWrap]}>
                     {assignments.map((item) => (
                       <ChoiceChip
@@ -1718,9 +1710,15 @@ function AppContent() {
                           <Text style={[styles.bombExplodedPlayerName, isRTL && styles.textRight]}>{currentScorePlayer.name}</Text>
                         </View>
                       ) : null}
-                      {scoreRound.prompt ? <Text style={[styles.promptSpotlightLabel, isRTL && styles.textRight]}>{t('category')}</Text> : null}
+                      {scoreRound.prompt ? <Text style={[styles.promptSpotlightLabel, styles.bombPulseLabel, isRTL && styles.textRight]}>{t('category')}</Text> : null}
                       {scoreRound.prompt ? <Text style={[styles.promptSpotlightValue, styles.bombCategoryValue, isRTL && styles.textRight]}>{scoreRound.prompt}</Text> : null}
-                      <Animated.View style={[styles.bombVisualShell, bombExploded && styles.bombVisualShellExploded, { transform: [{ scale: bombPulseScale }] }]}>
+                      {roundSecondsLeft != null && !bombExploded ? (
+                        <View style={[styles.countdownPill, styles.countdownPillCentered, isRTL && styles.rowReverse]}>
+                          <MaterialCommunityIcons color="#fbbf24" name="timer-outline" size={18} />
+                          <Text style={[styles.countdownText, isRTL && styles.textRight]}>{`${roundSecondsLeft}s`}</Text>
+                        </View>
+                      ) : null}
+                      <Animated.View style={[styles.bombVisualShell, bombExploded && styles.bombVisualShellExploded, { transform: [{ scale: bombExploded ? 1.5 : Math.min(1 + (bombPassCount * 0.08), 1.42) }, { scale: bombPulseScale }] }]}>
                         <MaterialCommunityIcons color={bombExploded ? '#fff7ed' : selectedGame.themeColor} name={bombExploded ? 'fire' : 'bomb'} size={96} />
                       </Animated.View>
                       {bombExploded ? (
@@ -1734,7 +1732,6 @@ function AppContent() {
                         </>
                       ) : (
                         <>
-                          <Text style={[styles.promptSpotlightHint, isRTL && styles.textRight]}>{t('bombPassHint')}</Text>
                           {currentScorePlayer ? (
                             <View style={styles.bombHolderCard}>
                               <Text style={[styles.promptSpotlightLabel, isRTL && styles.textRight]}>{t('turnOf')}</Text>
@@ -1750,42 +1747,47 @@ function AppContent() {
                     </View>
                   ) : selectedGame?.id === 'verdade-ou-desafio' ? (
                     <>
-                      <View style={styles.promptSpotlightCard}>
-                        {currentScorePlayer ? <Text style={[styles.promptSpotlightLabel, isRTL && styles.textRight]}>{t('turnOf')} {currentScorePlayer.name}</Text> : null}
-                        <Text style={[styles.promptSpotlightValue, isRTL && styles.textRight]}>{scoreRound.prompt}</Text>
-                        {scoreRound.type ? <Text style={[styles.promptSpotlightMeta, isRTL && styles.textRight]}>{scoreRound.type}</Text> : null}
-                        {roundSecondsLeft != null ? (
-                          <View style={[styles.countdownPill, styles.countdownPillCentered, isRTL && styles.rowReverse]}>
-                            <MaterialCommunityIcons color="#fbbf24" name="timer-outline" size={18} />
-                            <Text style={[styles.countdownText, isRTL && styles.textRight]}>{`${String(roundSecondsLeft)}s`}</Text>
-                          </View>
-                        ) : null}
-                        <Text style={[styles.promptSpotlightHint, truthOrDareTimedOut && styles.promptSpotlightHintAlert, isRTL && styles.textRight]}>
-                          {truthOrDareTimedOut ? t('truthDareTimeUp') : t('truthDareTimerHint')}
-                        </Text>
-                        <View style={[styles.stepperRow, isRTL && styles.rowReverse]}>
-                          <IconCircleButton disabled={truthOrDareTimedOut || !currentScorePlayer} icon="minus" onPress={() => currentScorePlayer ? updateScore(currentScorePlayer.id, -1) : null} />
-                          <Text style={[styles.scoreValue, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#f97316' }]}>{currentScorePlayer ? scoreBoard[currentScorePlayer.id] ?? 0 : 0}</Text>
-                          <IconCircleButton disabled={truthOrDareTimedOut || !currentScorePlayer} icon="plus" onPress={() => currentScorePlayer ? updateScore(currentScorePlayer.id, 1) : null} />
-                        </View>
-                      </View>
-                      <View style={styles.block}>
-                        <Text style={styles.blockTitle}>{t('scoreboard')}</Text>
-                        {scoreLeaders.length ? (
-                          <Text style={[styles.infoText, isRTL && styles.textRight]}>
-                            {scoreLeaders.length > 1 ? t('leadersTied') : t('currentLeader')}: {scoreLeaders.map((item) => item.name).join(', ')} - {scoreLeaders[0].score}
-                          </Text>
-                        ) : null}
-                        {rankedScoreEntries.map((item) => (
-                          <View key={item.id} style={[styles.finalRow, item.id === currentScorePlayer?.id && styles.finalRowActive, isRTL && styles.rowReverse]}>
-                            <View style={styles.scoreboardNameWrap}>
-                              <Text style={[styles.finalName, isRTL && styles.textRight]}>{item.name}</Text>
-                              {item.id === currentScorePlayer?.id ? <Text style={styles.scoreboardTurnText}>{t('turn')}</Text> : null}
+                      {currentRoundKey ? (
+                        <View style={[styles.promptSpotlightCard, styles.truthDareCard, scoreRound.type?.toLowerCase() === 'desafio' && styles.truthDareCardDare]}>
+                          {currentScorePlayer ? <Text style={[styles.promptSpotlightLabel, styles.truthDareTurnLabel, isRTL && styles.textRight]}>{t('turnOf')} {currentScorePlayer.name}</Text> : null}
+                          {scoreRound.type ? (
+                            <View style={[styles.truthDareModeBadge, isRTL && styles.rowReverse, scoreRound.type?.toLowerCase() === 'desafio' && styles.truthDareModeBadgeDare]}>
+                              <MaterialCommunityIcons color={scoreRound.type?.toLowerCase() === 'desafio' ? '#ffd6e7' : '#d9fbff'} name={scoreRound.type?.toLowerCase() === 'desafio' ? 'lightning-bolt' : 'chat-processing-outline'} size={14} />
+                              <Text style={[styles.truthDareModeBadgeText, isRTL && styles.textRight]}>{scoreRound.type}</Text>
                             </View>
-                            <Text style={[styles.finalRole, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#f97316' }]}>{item.score}</Text>
+                          ) : null}
+                          <Text style={[styles.promptSpotlightValue, styles.truthDarePromptValue, isRTL && styles.textRight]}>{scoreRound.prompt}</Text>
+                          {roundSecondsLeft != null ? (
+                            <View style={[styles.countdownPill, styles.countdownPillCentered, isRTL && styles.rowReverse]}>
+                              <MaterialCommunityIcons color="#fbbf24" name="timer-outline" size={18} />
+                              <Text style={[styles.countdownText, isRTL && styles.textRight]}>{`${String(roundSecondsLeft)}s`}</Text>
+                            </View>
+                          ) : null}
+                          {truthOrDareTimedOut ? (
+                            <Text style={[styles.promptSpotlightHint, styles.promptSpotlightHintAlert, isRTL && styles.textRight]}>{t('truthDareTimeUp')}</Text>
+                          ) : null}
+                          <View style={[styles.stepperRow, isRTL && styles.rowReverse]}>
+                            <IconCircleButton disabled={truthOrDareTimedOut || !currentScorePlayer} icon="minus" onPress={() => currentScorePlayer ? updateScore(currentScorePlayer.id, -1) : null} />
+                            <Text style={[styles.scoreValue, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#fb4ecb' }]}>{currentScorePlayer ? scoreBoard[currentScorePlayer.id] ?? 0 : 0}</Text>
+                            <IconCircleButton disabled={truthOrDareTimedOut || !currentScorePlayer} icon="plus" onPress={() => currentScorePlayer ? updateScore(currentScorePlayer.id, 1) : null} />
                           </View>
-                        ))}
-                      </View>
+                        </View>
+                      ) : (
+                        <View style={styles.block}>
+                          <Text style={styles.blockTitle}>{t('scoreboard')}</Text>
+                          {scoreLeaders.length ? (
+                            <Text style={[styles.infoText, isRTL && styles.textRight]}>
+                              {scoreLeaders.length > 1 ? t('leadersTied') : t('currentLeader')}: {scoreLeaders.map((item) => item.name).join(', ')} - {scoreLeaders[0].score}
+                            </Text>
+                          ) : null}
+                          {rankedScoreEntries.map((item) => (
+                            <View key={item.id} style={[styles.finalRow, scoreLeaders.some((leader) => leader.id === item.id) && styles.finalRowActive, isRTL && styles.rowReverse]}>
+                              <Text style={[styles.finalName, isRTL && styles.textRight]}>{item.name}</Text>
+                              <Text style={[styles.finalRole, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#fb4ecb' }]}>{item.score}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </>
                   ) : (
                     <View style={styles.promptSpotlightCard}>
@@ -1804,9 +1806,10 @@ function AppContent() {
                 </View>
               )}
               {selectedGame?.id === 'impostor' && impostorStarterName ? (
-                <View style={styles.narrativeCard}>
-                  <Text style={styles.blockTitle}>{t('starterLabel')}</Text>
-                  <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('starterLine')} {impostorStarterName}</Text>
+                <View style={styles.starterSpotlightCard}>
+                  <Text style={[styles.starterSpotlightEyebrow, isRTL && styles.textRight]}>{t('starterLabel')}</Text>
+                  <Text style={[styles.starterSpotlightName, isRTL && styles.textRight]}>{impostorStarterName}</Text>
+                  <Text style={[styles.starterSpotlightBody, isRTL && styles.textRight]}>{t('starterLine')} {impostorStarterName}</Text>
                 </View>
               ) : null}
               {showFinalRoles && (
@@ -1816,7 +1819,7 @@ function AppContent() {
                     assignments.map((item) => (
                       <View key={item.id} style={[styles.finalRow, isRTL && styles.rowReverse]}>
                         <Text style={[styles.finalName, isRTL && styles.textRight]}>{item.name}</Text>
-                        <Text style={[styles.finalRole, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#f97316' }]}>{selectedGame?.id === 'quem-sou-eu' ? item.secretWord : item.role}</Text>
+                        <Text style={[styles.finalRole, isRTL && styles.textRight, { color: selectedGame?.themeColor ?? '#fb4ecb' }]}>{selectedGame?.id === 'quem-sou-eu' ? item.secretWord : item.role}</Text>
                       </View>
                     ))
                   )}
@@ -1831,52 +1834,87 @@ function AppContent() {
           {screen === 'premium' && (
             <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 24, 36) }]}>
               <HeaderBar title={t('premium')} onBack={goBack} onHome={goHome} isRTL={isRTL} />
-              <View style={[styles.heroCard, { backgroundColor: palette.surface, borderColor: '#f97316' }]}>
-                <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
-                  <Text style={[styles.screenTitle, isRTL && styles.textRight, { color: palette.text, fontSize: 26 }]}>{t('premiumAccess')}</Text>
-                  <MaterialCommunityIcons color="#f97316" name="diamond-stone" size={24} />
+              <View style={styles.premiumHero}>
+                <View style={styles.premiumHeroGlowPink} />
+                <View style={styles.premiumHeroGlowBlue} />
+                <View style={[styles.premiumHeroTop, isRTL && styles.rowReverse]}>
+                  <View style={styles.premiumBadge}>
+                    <MaterialCommunityIcons color="#fdf4ff" name="diamond-stone" size={16} />
+                    <Text style={styles.premiumBadgeText}>{t('premiumAccess')}</Text>
+                  </View>
+                  <View style={styles.premiumSoonPill}>
+                    <Text style={styles.premiumSoonText}>{t('premiumStatusSoon')}</Text>
+                  </View>
                 </View>
-                <Text style={[styles.infoText, isRTL && styles.textRight, { color: palette.text }]}>{t('premiumHeadline')}</Text>
-                <Text style={[styles.heroSubtitle, isRTL && styles.textRight, { color: palette.textMuted }]}>{t('premiumSubhead')}</Text>
+                <Text style={[styles.premiumHeroTitle, isRTL && styles.textRight]}>{t('premiumHeadline')}</Text>
+                <Text style={[styles.premiumHeroText, isRTL && styles.textRight]}>{t('premiumSubhead')}</Text>
               </View>
-              <View style={[styles.actionRow, isRTL && styles.rowReverse]}>
-                <View style={[styles.priceCard, styles.priceCardFeatured]}>
-                  <Text style={styles.priceLabel}>{t('premiumMonthly')}</Text>
+
+              <View style={[styles.premiumPlans, isRTL && styles.rowReverse]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('premiumMonthly')} R$ 9,90`}
+                  style={[styles.premiumPlanCard, styles.premiumPlanFeatured]}
+                  onPress={() => {
+                    trackEvent('premium_cta', 'monthly');
+                    showNotice(t('premiumComingSoon'), 'info');
+                  }}
+                >
+                  <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
+                    <Text style={styles.priceLabel}>{t('premiumMonthly')}</Text>
+                    <Text style={styles.priceTag}>{t('premiumPopular')}</Text>
+                  </View>
                   <Text style={styles.priceValue}>R$ 9,90</Text>
-                  <Text style={styles.priceTag}>{t('premiumPopular')}</Text>
-                </View>
-                <View style={styles.priceCard}>
-                  <Text style={styles.priceLabel}>{t('premiumLifetime')}</Text>
+                  <Text style={[styles.priceTagMuted, isRTL && styles.textRight]}>{t('premiumPlanMonthlyNote')}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('premiumLifetime')} R$ 29,90`}
+                  style={styles.premiumPlanCard}
+                  onPress={() => {
+                    trackEvent('premium_cta', 'lifetime');
+                    showNotice(t('premiumComingSoon'), 'info');
+                  }}
+                >
+                  <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
+                    <Text style={styles.priceLabel}>{t('premiumLifetime')}</Text>
+                    <Text style={[styles.priceTag, styles.priceTagBlue]}>{t('premiumBestValue')}</Text>
+                  </View>
                   <Text style={styles.priceValue}>R$ 29,90</Text>
-                  <Text style={styles.priceTagMuted}>{t('premiumPaidLabel')}</Text>
-                </View>
+                  <Text style={[styles.priceTagMuted, isRTL && styles.textRight]}>{t('premiumPlanLifetimeNote')}</Text>
+                </Pressable>
               </View>
+
               <View style={styles.block}>
-                <Text style={[styles.blockTitle, isRTL && styles.textRight]}>{t('premiumCompare')}</Text>
+                <Text style={[styles.blockTitle, isRTL && styles.textRight]}>{t('premiumUnlockTitle')}</Text>
                 {[
-                  [t('premiumFeatureGames'), t('premiumFreeLabel'), t('premiumPaidLabel')],
-                  [t('premiumFeatureThemes'), t('premiumFreeLabel'), t('premiumPaidLabel')],
-                  [t('premiumFeatureWords'), t('premiumFreeLabel'), t('premiumPaidLabel')],
-                  [t('premiumFeatureSounds'), t('premiumFreeLabel'), t('premiumPaidLabel')],
-                  [t('premiumFeatureHistory'), t('premiumPaidLabel'), t('premiumPaidLabel')],
-                  [t('premiumFeatureAds'), t('premiumFreeLabel'), t('premiumPaidLabel')],
-                ].map(([label, left, right]) => (
-                  <View key={label} style={[styles.compareRow, isRTL && styles.rowReverse]}>
-                    <Text style={[styles.compareLabel, isRTL && styles.textRight]}>{label}</Text>
-                    <Text style={styles.compareValue}>{left}</Text>
-                    <Text style={[styles.compareValue, styles.compareValueHighlight]}>{right}</Text>
+                  ['cards-playing-outline', t('premiumFeatureGames')],
+                  ['palette-outline', t('premiumFeatureThemes')],
+                  ['format-letter-case', t('premiumFeatureWords')],
+                  ['volume-high', t('premiumFeatureSounds')],
+                  ['chart-timeline-variant', t('premiumFeatureHistory')],
+                  ['shield-check-outline', t('premiumFeatureAds')],
+                ].map(([icon, label]) => (
+                  <View key={label} style={[styles.premiumBenefitRow, isRTL && styles.rowReverse]}>
+                    <View style={styles.premiumBenefitIcon}>
+                      <MaterialCommunityIcons color="#fdf4ff" name={icon} size={18} />
+                    </View>
+                    <Text style={[styles.premiumBenefitText, isRTL && styles.textRight]}>{label}</Text>
+                    <MaterialCommunityIcons color="#67e8f9" name="check-circle" size={18} />
                   </View>
                 ))}
               </View>
-              <View style={styles.block}>
-                <Text style={[styles.blockTitle, isRTL && styles.textRight]}>{t('rewardedAccess')}</Text>
-                <View style={[styles.infoRow, isRTL && styles.rowReverse]}>
-                  <MaterialCommunityIcons color="#38bdf8" name="gift-outline" size={18} />
-                  <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('rewardedAccessHint')}</Text>
+
+              <View style={styles.premiumRewardCard}>
+                <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
+                  <Text style={[styles.blockTitle, isRTL && styles.textRight]}>{t('rewardedAccess')}</Text>
+                  <MaterialCommunityIcons color="#67e8f9" name="gift-outline" size={22} />
                 </View>
+                <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('rewardedAccessHint')}</Text>
               </View>
+
               <View style={styles.block}>
-                <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('premiumComingSoon')}</Text>
+                <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('premiumReadyNote')}</Text>
                 <View style={[styles.actionRow, isRTL && styles.rowReverse]}>
                   <Pressable
                     style={styles.primaryButton}
@@ -2011,7 +2049,7 @@ function AppContent() {
                   <View style={styles.historyCard}>
                     <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
                       <Text style={[styles.historyTitle, isRTL && styles.textRight]}>{t('impostorLead')}</Text>
-                      <MaterialCommunityIcons color="#f97316" name="incognito" size={20} />
+                      <MaterialCommunityIcons color="#fb4ecb" name="incognito" size={20} />
                     </View>
                     <Text style={[styles.historyNote, isRTL && styles.textRight]}>{getImpostorStatsLabel()}</Text>
                   </View>
@@ -2077,8 +2115,21 @@ function CategoryChip({ active, label, onPress, isRTL = false }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={label} style={[styles.categoryChip, active && styles.categoryChipActive]} onPress={onPress}><Text style={[styles.categoryChipText, active && styles.categoryChipTextActive, isRTL && styles.textRight]}>{label}</Text></Pressable>;
 }
 
+function formatChipLabel(label) {
+  const map = {
+    familia: 'família',
+    profissoes: 'profissões',
+    medio: 'médio',
+    caotico: 'caótico',
+    mimica: 'mímica',
+    relampago: 'relâmpago',
+  };
+  return map[label] ?? label;
+}
+
 function ChoiceChip({ active, label, onPress, isRTL = false }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={label} style={[styles.choiceChip, active && styles.choiceChipActive]} onPress={onPress}><Text style={[styles.choiceChipText, active && styles.choiceChipTextActive, isRTL && styles.textRight]}>{label}</Text></Pressable>;
+  const displayLabel = formatChipLabel(label);
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={displayLabel} style={[styles.choiceChip, active && styles.choiceChipActive]} onPress={onPress}><Text style={[styles.choiceChipText, active && styles.choiceChipTextActive, isRTL && styles.textRight]}>{displayLabel}</Text></Pressable>;
 }
 
 function IconCircleButton({ icon, onPress, disabled = false }) {
@@ -2093,12 +2144,12 @@ function MiniStat({ label, value, isRTL = false }) {
   return <View style={styles.statPill}><Text style={[styles.statLabel, isRTL && styles.textRight]}>{label}</Text><Text style={[styles.statValue, isRTL && styles.textRight]} numberOfLines={1}>{value}</Text></View>;
 }
 
-function SmallMenuButton({ icon, label, onPress, isRTL = false }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.smallMenuButton} onPress={onPress}><MaterialCommunityIcons color="#cbd5e1" name={icon} size={18} /><Text style={[styles.smallMenuButtonText, isRTL && styles.textRight]}>{label}</Text></Pressable>;
+function SmallMenuButton({ icon, label, onPress, isRTL = false, compact = false, menuItem = false }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.smallMenuButton, compact && styles.smallMenuButtonCompact, menuItem && styles.smallMenuButtonMenuItem, (menuItem || isRTL) && isRTL && styles.rowReverse]} onPress={onPress}><MaterialCommunityIcons color="#cbd5e1" name={icon} size={18} /><Text style={[styles.smallMenuButtonText, menuItem && styles.smallMenuButtonMenuText, isRTL && styles.textRight]}>{label}</Text></Pressable>;
 }
 
 function OnboardingMini({ icon, title, isRTL = false }) {
-  return <View style={styles.onboardingMini}><MaterialCommunityIcons color="#f97316" name={icon} size={20} /><Text style={[styles.onboardingMiniText, isRTL && styles.textRight]}>{title}</Text></View>;
+  return <View style={styles.onboardingMini}><MaterialCommunityIcons color="#fb4ecb" name={icon} size={20} /><Text style={[styles.onboardingMiniText, isRTL && styles.textRight]}>{title}</Text></View>;
 }
 
 function InfoScreen({ title, items, onBack, onHome, extraAction, isRTL = false }) {
@@ -2106,7 +2157,7 @@ function InfoScreen({ title, items, onBack, onHome, extraAction, isRTL = false }
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <HeaderBar title={title} onBack={onBack} onHome={onHome} isRTL={isRTL} />
       <View style={styles.block}>
-        {items.map((item) => <View key={item} style={[styles.infoRow, isRTL && styles.rowReverse]}><MaterialCommunityIcons color="#f97316" name="check-circle-outline" size={18} /><Text style={[styles.infoText, isRTL && styles.textRight]}>{item}</Text></View>)}
+        {items.map((item) => <View key={item} style={[styles.infoRow, isRTL && styles.rowReverse]}><MaterialCommunityIcons color="#fb4ecb" name="check-circle-outline" size={18} /><Text style={[styles.infoText, isRTL && styles.textRight]}>{item}</Text></View>)}
       </View>
       {extraAction ? extraAction : null}
     </ScrollView>
@@ -2114,13 +2165,14 @@ function InfoScreen({ title, items, onBack, onHome, extraAction, isRTL = false }
 }
 
 function SettingRow({ active, icon, label, onPress, isRTL = false }) {
-  return <Pressable style={[styles.settingRow, isRTL && styles.rowReverse]} onPress={onPress}><View style={[styles.settingLeft, isRTL && styles.rowReverse]}><MaterialCommunityIcons color={active ? '#f97316' : '#94a3b8'} name={icon} size={18} /><Text style={[styles.settingLabel, isRTL && styles.textRight]}>{label}</Text></View><MaterialCommunityIcons color={active ? '#22c55e' : '#475569'} name={active ? 'toggle-switch' : 'toggle-switch-off-outline'} size={34} /></Pressable>;
+  return <Pressable style={[styles.settingRow, isRTL && styles.rowReverse]} onPress={onPress}><View style={[styles.settingLeft, isRTL && styles.rowReverse]}><MaterialCommunityIcons color={active ? '#fb4ecb' : '#94a3b8'} name={icon} size={18} /><Text style={[styles.settingLabel, isRTL && styles.textRight]}>{label}</Text></View><MaterialCommunityIcons color={active ? '#67e8f9' : '#475569'} name={active ? 'toggle-switch' : 'toggle-switch-off-outline'} size={34} /></Pressable>;
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#000000' },
   container: { flex: 1, backgroundColor: '#000000' },
   centeredScreen: { alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingLogo: { width: 112, height: 112 },
   loadingText: { color: '#f8fafc', fontSize: 16, fontFamily: FONT_BOLD },
   scrollContent: { padding: 18, paddingBottom: 32, gap: 16 },
   homeScrollContent: { padding: 18, paddingBottom: 36, gap: 16 },
@@ -2158,6 +2210,10 @@ const styles = StyleSheet.create({
   homePartyModeTextWrap: { gap: 2 },
   homePartyModeTitle: { color: '#fff5ff', fontSize: 18, fontFamily: FONT_EXTRABOLD },
   homePartyModeCaption: { color: '#ff92d6', fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: FONT_BOLD },
+  homeTopActions: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, zIndex: 20 },
+  hamburgerButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#11111a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  homeMenuPanel: { position: 'absolute', top: 70, right: 18, width: 230, zIndex: 25, backgroundColor: '#0d0b17', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 20, padding: 10, gap: 8, shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
+  homeMenuPanelRTL: { left: 18, right: undefined },
   homeGameGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 14 },
   quickLinks: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   onboardingCard: { backgroundColor: '#000000', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#000000', gap: 14 },
@@ -2166,7 +2222,10 @@ const styles = StyleSheet.create({
   onboardingMini: { flex: 1, backgroundColor: '#000000', borderRadius: 18, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', gap: 8 },
   onboardingMiniText: { color: '#e2e8f0', fontSize: 13, fontFamily: FONT_BOLD },
   smallMenuButton: { minWidth: '22%', flexGrow: 1, backgroundColor: '#11111a', borderRadius: 20, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  smallMenuButtonCompact: { minWidth: 0, flexGrow: 0, flexDirection: 'row', alignSelf: 'flex-start', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
+  smallMenuButtonMenuItem: { minWidth: 0, width: '100%', flexGrow: 0, flexDirection: 'row', justifyContent: 'flex-start', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12 },
   smallMenuButtonText: { color: '#d6d0ec', fontSize: 12, fontFamily: FONT_BOLD },
+  smallMenuButtonMenuText: { flex: 1, fontSize: 13 },
   focusCard: { backgroundColor: '#000000', borderRadius: 24, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   focusIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   focusText: { flex: 1, gap: 2 },
@@ -2180,7 +2239,7 @@ const styles = StyleSheet.create({
   signalChip: { backgroundColor: '#000000', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   signalChipText: { color: '#e2e8f0', fontSize: 12, fontFamily: FONT_SEMIBOLD },
   categoryChip: { backgroundColor: '#000000', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
-  categoryChipActive: { backgroundColor: '#f97316' },
+  categoryChipActive: { backgroundColor: '#fb4ecb' },
   categoryChipText: { color: '#cbd5e1', fontSize: 13, fontFamily: FONT_SEMIBOLD },
   categoryChipTextActive: { color: '#fff7ed', fontFamily: FONT_SEMIBOLD },
   optionLine: { gap: 10 },
@@ -2209,7 +2268,7 @@ const styles = StyleSheet.create({
   promptSpotlightCard: { backgroundColor: '#000000', borderRadius: 24, borderWidth: 1, borderColor: '#334155', paddingHorizontal: 18, paddingVertical: 20, gap: 8 },
   promptSpotlightLabel: { color: '#94a3b8', fontSize: 12, fontFamily: FONT_SEMIBOLD, textTransform: 'uppercase', letterSpacing: 0.6 },
   promptSpotlightValue: { color: '#f8fafc', fontSize: 28, lineHeight: 34, fontFamily: FONT_EXTRABOLD },
-  promptSpotlightMeta: { color: '#f97316', fontSize: 13, fontFamily: FONT_BOLD, textTransform: 'capitalize' },
+  promptSpotlightMeta: { color: '#fb4ecb', fontSize: 13, fontFamily: FONT_BOLD, textTransform: 'capitalize' },
   promptSpotlightHint: { color: '#cbd5e1', fontSize: 14, lineHeight: 20, fontFamily: FONT_SEMIBOLD },
   promptSpotlightHintAlert: { color: '#fecaca' },
   bombStageCard: { backgroundColor: '#000000', borderRadius: 28, borderWidth: 1, borderColor: '#312e81', padding: 24, alignItems: 'center', justifyContent: 'center', gap: 18, minHeight: 420 },
@@ -2229,11 +2288,29 @@ const styles = StyleSheet.create({
   statValue: { color: '#f8fafc', fontSize: 16, fontFamily: FONT_BOLD },
   actionRow: { flexDirection: 'row', gap: 10 },
   priceCard: { flex: 1, backgroundColor: '#000000', borderRadius: 22, paddingVertical: 18, paddingHorizontal: 16, borderWidth: 1, borderColor: '#000000', gap: 6 },
-  priceCardFeatured: { borderColor: '#f97316', shadowColor: '#f97316', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  priceCardFeatured: { borderColor: '#fb4ecb', shadowColor: '#fb4ecb', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   priceLabel: { color: '#cbd5e1', fontSize: 13, fontFamily: FONT_BOLD },
   priceValue: { color: '#f8fafc', fontSize: 26, fontFamily: FONT_EXTRABOLD },
   priceTag: { color: '#fed7aa', fontSize: 12, fontFamily: FONT_BOLD },
   priceTagMuted: { color: '#94a3b8', fontSize: 12, fontFamily: FONT_BOLD },
+  premiumHero: { position: 'relative', overflow: 'hidden', borderRadius: 28, padding: 20, gap: 14, backgroundColor: '#100617', borderWidth: 1, borderColor: '#fb4ecb' },
+  premiumHeroGlowPink: { position: 'absolute', top: -42, left: -30, width: 150, height: 150, borderRadius: 999, backgroundColor: 'rgba(251,78,203,0.22)' },
+  premiumHeroGlowBlue: { position: 'absolute', right: -48, bottom: -46, width: 170, height: 170, borderRadius: 999, backgroundColor: 'rgba(103,232,249,0.16)' },
+  premiumHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  premiumBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(251,78,203,0.24)', borderWidth: 1, borderColor: 'rgba(251,78,203,0.48)' },
+  premiumBadgeText: { color: '#fdf4ff', fontSize: 11, fontFamily: FONT_BOLD, textTransform: 'uppercase' },
+  premiumSoonPill: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(103,232,249,0.14)', borderWidth: 1, borderColor: 'rgba(103,232,249,0.38)' },
+  premiumSoonText: { color: '#a5f3fc', fontSize: 11, fontFamily: FONT_BOLD, textTransform: 'uppercase' },
+  premiumHeroTitle: { color: '#fff7ff', fontSize: 30, lineHeight: 34, fontFamily: FONT_EXTRABOLD },
+  premiumHeroText: { color: '#e9d5ff', fontSize: 14, lineHeight: 21, fontFamily: FONT_SEMIBOLD },
+  premiumPlans: { flexDirection: 'row', gap: 12 },
+  premiumPlanCard: { flex: 1, minHeight: 150, backgroundColor: '#070711', borderRadius: 22, paddingVertical: 18, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(103,232,249,0.34)', gap: 9 },
+  premiumPlanFeatured: { borderColor: '#fb4ecb', shadowColor: '#fb4ecb', shadowOpacity: 0.24, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
+  priceTagBlue: { color: '#a5f3fc' },
+  premiumBenefitRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#070711', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  premiumBenefitIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(251,78,203,0.18)', borderWidth: 1, borderColor: 'rgba(251,78,203,0.32)' },
+  premiumBenefitText: { flex: 1, color: '#f8fafc', fontSize: 14, lineHeight: 19, fontFamily: FONT_SEMIBOLD },
+  premiumRewardCard: { backgroundColor: '#071827', borderRadius: 24, padding: 16, gap: 10, borderWidth: 1, borderColor: 'rgba(103,232,249,0.32)' },
   compareRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#000000', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 12 },
   compareLabel: { flex: 1, color: '#e2e8f0', fontSize: 13, fontFamily: FONT_SEMIBOLD },
   compareValue: { minWidth: 74, color: '#94a3b8', fontSize: 12, fontFamily: FONT_BOLD, textAlign: 'center' },
@@ -2242,8 +2319,8 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: '#f8fafc', fontFamily: FONT_BOLD },
   destructiveButton: { backgroundColor: '#7f1d1d' },
   destructiveButtonText: { color: '#fee2e2' },
-  primaryButton: { flex: 1, backgroundColor: '#f97316', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row' },
-  cardActionButton: { minWidth: 180, alignSelf: 'stretch', backgroundColor: '#f97316', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row' },
+  primaryButton: { flex: 1, backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  cardActionButton: { minWidth: 180, alignSelf: 'stretch', backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.26, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   primaryButtonText: { color: '#fff7ed', fontFamily: FONT_BOLD, fontSize: 16 },
   buttonDisabled: { opacity: 0.45 },
   revealScreen: { flex: 1, padding: 18, gap: 18, justifyContent: 'space-between' },
@@ -2257,7 +2334,7 @@ const styles = StyleSheet.create({
   revealContent: { alignItems: 'center', gap: 10 },
   revealRoleText: { color: '#f8fafc', fontSize: 32, fontFamily: FONT_EXTRABOLD, textAlign: 'center' },
   secretWordText: { color: '#fbbf24', fontSize: 24, fontFamily: FONT_BOLD, textAlign: 'center', textTransform: 'capitalize' },
-  nextButton: { alignSelf: 'center', minWidth: 170, backgroundColor: '#f97316', borderRadius: 18, paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', shadowColor: '#f97316', shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  nextButton: { alignSelf: 'center', minWidth: 170, backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   nextButtonText: { color: '#fff7ed', fontSize: 15, fontFamily: FONT_BOLD },
   finishActions: { flexDirection: 'row', gap: 10 },
   wordBanner: { backgroundColor: '#000000', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row' },
@@ -2267,8 +2344,6 @@ const styles = StyleSheet.create({
   finalName: { color: '#f8fafc', fontSize: 16, fontFamily: FONT_SEMIBOLD },
   finalRole: { fontSize: 16, fontFamily: FONT_BOLD },
   scoreValue: { minWidth: 32, color: '#f8fafc', fontSize: 20, fontFamily: FONT_EXTRABOLD, textAlign: 'center' },
-  scoreboardNameWrap: { flex: 1, gap: 4 },
-  scoreboardTurnText: { color: '#f9a8d4', fontSize: 12, fontFamily: FONT_BOLD, textTransform: 'uppercase' },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   infoText: { flex: 1, color: '#e2e8f0', fontSize: 14, lineHeight: 20, fontFamily: FONT_REGULAR },
   settingRow: { backgroundColor: '#000000', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -2276,7 +2351,7 @@ const styles = StyleSheet.create({
   settingLabel: { color: '#f8fafc', fontSize: 15, fontFamily: FONT_SEMIBOLD },
   historyCard: { backgroundColor: '#000000', borderRadius: 22, padding: 16, gap: 8, borderWidth: 1, borderColor: '#000000' },
   analyticsCard: { backgroundColor: '#000000' },
-  spotlightBlock: { borderColor: '#f97316' },
+  spotlightBlock: { borderColor: '#fb4ecb' },
   rankingTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rankingTopText: { flex: 1, gap: 2 },
   rankingTopName: { color: '#f8fafc', fontSize: 20, fontFamily: FONT_EXTRABOLD },
@@ -2284,4 +2359,28 @@ const styles = StyleSheet.create({
   historyTitle: { color: '#f8fafc', fontSize: 16, fontFamily: FONT_BOLD, flex: 1 },
   historyMeta: { color: '#94a3b8', fontSize: 13, fontFamily: FONT_SEMIBOLD },
   historyNote: { color: '#e2e8f0', fontSize: 14, fontFamily: FONT_SEMIBOLD },
+  homeSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 2 },
+  homeSectionTitleWrap: { gap: 4 },
+  homeSectionEyebrow: { color: '#70e8ff', fontSize: 11, letterSpacing: 1.6, fontFamily: FONT_BOLD },
+  homeSectionTitle: { color: '#fff5ff', fontSize: 24, fontFamily: FONT_EXTRABOLD },
+  homeSectionCountPill: { minWidth: 38, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#11111a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center' },
+  homeSectionCountText: { color: '#ff9cdc', fontSize: 13, fontFamily: FONT_EXTRABOLD },
+  quickLinksMuted: { opacity: 0.96 },
+  signalChipCity: { backgroundColor: '#160b2d', borderWidth: 1, borderColor: '#8b5cf6' },
+  revealCardGlow: { position: 'absolute', top: -20, right: -20, width: 140, height: 140, borderRadius: 999, opacity: 0.75 },
+  holdButtonImpostor: { borderColor: '#38bdf8', backgroundColor: '#071827' },
+  holdButtonSubtext: { color: '#94a3b8', fontSize: 12, fontFamily: FONT_BOLD, textTransform: 'uppercase', letterSpacing: 1.2 },
+  starterSpotlightCard: { borderRadius: 24, padding: 18, gap: 8, backgroundColor: '#071827', borderWidth: 1, borderColor: '#38bdf8' },
+  starterSpotlightEyebrow: { color: '#7dd3fc', fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', fontFamily: FONT_BOLD },
+  starterSpotlightName: { color: '#fff7ed', fontSize: 28, fontFamily: FONT_EXTRABOLD },
+  starterSpotlightBody: { color: '#bae6fd', fontSize: 14, lineHeight: 20, fontFamily: FONT_SEMIBOLD },
+  cityBoardBlock: { backgroundColor: '#12091f', borderColor: '#8b5cf6' },
+  bombPulseLabel: { color: '#fda4af' },
+  truthDareCard: { backgroundColor: '#0f2230', borderColor: '#155e75' },
+  truthDareCardDare: { backgroundColor: '#331220', borderColor: '#9d174d' },
+  truthDareTurnLabel: { color: '#f8fafc' },
+  truthDareModeBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#103246', borderWidth: 1, borderColor: '#155e75' },
+  truthDareModeBadgeDare: { backgroundColor: '#4a102b', borderColor: '#9d174d' },
+  truthDareModeBadgeText: { color: '#f8fafc', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: FONT_BOLD },
+  truthDarePromptValue: { marginTop: 4 },
 });
