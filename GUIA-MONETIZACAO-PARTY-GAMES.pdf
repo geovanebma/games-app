@@ -1,0 +1,171 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Length 4413 >>
+stream
+BT
+/F2 19 Tf 1 0 0 1 50 792 Tm (Guia de monetiza??o do Party Games) Tj
+/F1 10.5 Tf 1 0 0 1 50 760 Tm (Preparado para o projeto party-games-apk. Este PDF explica como colocar an?ncios, como remover) Tj
+/F1 10.5 Tf 1 0 0 1 50 745 Tm (an?ncios para quem pagar, como publicar na Play Store e onde cadastrar dados banc?rios para) Tj
+/F1 10.5 Tf 1 0 0 1 50 730 Tm (receber valores.) Tj
+/F1 10.5 Tf 1 0 0 1 50 715 Tm (Observa??o importante: pagamentos e an?ncios dependem das aprova??es do Google Play, AdMob,) Tj
+/F1 10.5 Tf 1 0 0 1 50 700 Tm (pol?ticas locais e dados fiscais/banc?rios. Use este guia como checklist t?cnico e confira as) Tj
+/F1 10.5 Tf 1 0 0 1 50 685 Tm (telas oficiais antes de publicar.) Tj
+/F2 14 Tf 1 0 0 1 50 662 Tm (1. Modelo recomendado para o app) Tj
+/F1 10.5 Tf 1 0 0 1 50 640 Tm (- Vers?o gr?tis: jogos b?sicos com an?ncios em pontos leves, sem atrapalhar a rodada.) Tj
+/F1 10.5 Tf 1 0 0 1 50 625 Tm (- Premium mensal: remove an?ncios, libera temas/packs extras e estat?sticas melhores. Produto) Tj
+/F1 10.5 Tf 1 0 0 1 50 610 Tm (sugerido: premium_monthly.) Tj
+/F1 10.5 Tf 1 0 0 1 50 595 Tm (- Premium vital?cio: remove an?ncios para sempre e libera todos os extras. Produto sugerido:) Tj
+/F1 10.5 Tf 1 0 0 1 50 580 Tm (premium_lifetime.) Tj
+/F1 10.5 Tf 1 0 0 1 50 565 Tm (- An?ncio recompensado opcional: o usu?rio assiste um an?ncio para liberar um pack/tema por tempo) Tj
+/F1 10.5 Tf 1 0 0 1 50 550 Tm (limitado.) Tj
+/F1 10.5 Tf 1 0 0 1 50 535 Tm (- Nunca mostre an?ncios no meio da revela??o secreta. Prefira fim de rodada, home ou carregamento.) Tj
+/F2 14 Tf 1 0 0 1 50 512 Tm (2. Como colocar an?ncios no app) Tj
+/F1 10.5 Tf 1 0 0 1 50 490 Tm (- Crie uma conta no AdMob: https://admob.google.com/) Tj
+/F1 10.5 Tf 1 0 0 1 50 475 Tm (- No AdMob, crie o app Android e gere IDs para interstitial, rewarded e banner, se usar banner.) Tj
+/F1 10.5 Tf 1 0 0 1 50 460 Tm (- No Expo/React Native, use uma biblioteca nativa como react-native-google-mobile-ads. Isso) Tj
+/F1 10.5 Tf 1 0 0 1 50 445 Tm (normalmente exige EAS/dev build, n?o apenas Expo Go.) Tj
+/F1 10.5 Tf 1 0 0 1 50 430 Tm (- Configure o App ID do AdMob no app.json/app.config.js conforme a biblioteca escolhida.) Tj
+/F1 10.5 Tf 1 0 0 1 50 415 Tm (- Crie src/services/ads.js com loadInterstitial, showInterstitial, loadRewarded e showRewarded.) Tj
+/F1 10.5 Tf 1 0 0 1 50 400 Tm (- Use IDs de teste durante desenvolvimento e troque para IDs reais apenas perto da publica??o.) Tj
+/F1 10.5 Tf 1 0 0 1 50 385 Tm (- Sugest?o para este app: interstitial depois de 2 ou 3 rodadas; rewarded para liberar pack) Tj
+/F1 10.5 Tf 1 0 0 1 50 370 Tm (tempor?rio; evitar banner permanente.) Tj
+/F2 14 Tf 1 0 0 1 50 347 Tm (3. Como n?o mostrar an?ncios para quem pagar) Tj
+/F1 10.5 Tf 1 0 0 1 50 325 Tm (- Crie um estado global de compra: isPremium. Pode ficar em AsyncStorage como cache, mas a fonte) Tj
+/F1 10.5 Tf 1 0 0 1 50 310 Tm (de verdade deve vir da compra validada.) Tj
+/F1 10.5 Tf 1 0 0 1 50 295 Tm (- Antes de exibir qualquer an?ncio, fa?a: if \(isPremium\) return;) Tj
+/F1 10.5 Tf 1 0 0 1 50 280 Tm (- No in?cio do app, restaure compras com Google Play Billing para descobrir se o usu?rio ainda tem) Tj
+/F1 10.5 Tf 1 0 0 1 50 265 Tm (direito premium.) Tj
+/F1 10.5 Tf 1 0 0 1 50 250 Tm (- Para vital?cio, verifique se premium_lifetime foi comprado e reconhecido.) Tj
+/F1 10.5 Tf 1 0 0 1 50 235 Tm (- Para assinatura, verifique se premium_monthly est? ativa. Assinatura cancelada ou com pagamento) Tj
+/F1 10.5 Tf 1 0 0 1 50 220 Tm (falho n?o deve manter premium para sempre.) Tj
+/F1 10.5 Tf 1 0 0 1 50 205 Tm (- Crie um bot?o Restaurar compra na tela Premium para consultar novamente as compras do usu?rio.) Tj
+/F2 14 Tf 1 0 0 1 50 182 Tm (4. Como implementar pagamento dentro do app) Tj
+/F1 10.5 Tf 1 0 0 1 50 160 Tm (- Para conte?do digital vendido dentro de app Android distribu?do pela Play Store, normalmente use) Tj
+/F1 10.5 Tf 1 0 0 1 50 145 Tm (Google Play Billing.) Tj
+/F1 10.5 Tf 1 0 0 1 50 130 Tm (- Op??o t?cnica 1: react-native-iap, usando Google Play Billing diretamente no React Native.) Tj
+/F1 10.5 Tf 1 0 0 1 50 115 Tm (- Op??o t?cnica 2: RevenueCat, que simplifica assinatura, restore purchases e entitlement premium,) Tj
+/F1 10.5 Tf 1 0 0 1 50 100 Tm (mas adiciona servi?o externo.) Tj
+/F1 10.5 Tf 1 0 0 1 50 85 Tm (- No Play Console, crie os produtos: premium_lifetime como produto ?nico e premium_monthly como) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 4415 >>
+stream
+BT
+/F1 10.5 Tf 1 0 0 1 50 792 Tm (assinatura.) Tj
+/F1 10.5 Tf 1 0 0 1 50 777 Tm (- Fluxo do app: buscar produtos, mostrar pre?o real vindo da Play Store, iniciar compra, receber) Tj
+/F1 10.5 Tf 1 0 0 1 50 762 Tm (token, validar, conceder premium e reconhecer compra.) Tj
+/F1 10.5 Tf 1 0 0 1 50 747 Tm (- Ponto cr?tico: compras precisam ser reconhecidas depois de conceder o benef?cio. Se n?o) Tj
+/F1 10.5 Tf 1 0 0 1 50 732 Tm (reconhecer, o Google pode reembolsar automaticamente.) Tj
+/F1 10.5 Tf 1 0 0 1 50 717 Tm (- Para mais seguran?a, use um backend pequeno para validar tokens com a Google Play Developer API.) Tj
+/F2 14 Tf 1 0 0 1 50 694 Tm (5. API e backend para receber/validar valores) Tj
+/F1 10.5 Tf 1 0 0 1 50 672 Tm (- Voc? n?o precisa de API pr?pria para receber o dinheiro do Google Play. O pagamento ? processado) Tj
+/F1 10.5 Tf 1 0 0 1 50 657 Tm (pelo Google e o repasse vai para sua conta banc?ria cadastrada.) Tj
+/F1 10.5 Tf 1 0 0 1 50 642 Tm (- A API pr?pria serve para validar compras, evitar fraude, sincronizar premium entre aparelhos e) Tj
+/F1 10.5 Tf 1 0 0 1 50 627 Tm (registrar status de assinatura.) Tj
+/F1 10.5 Tf 1 0 0 1 50 612 Tm (- Modelo simples: POST /purchase/verify com userId, packageName, productId e purchaseToken. O) Tj
+/F1 10.5 Tf 1 0 0 1 50 597 Tm (backend consulta Google e responde premium=true/false.) Tj
+/F1 10.5 Tf 1 0 0 1 50 582 Tm (- Nunca coloque chaves privadas da Google API dentro do app. Chaves de servi?o ficam no backend.) Tj
+/F2 14 Tf 1 0 0 1 50 559 Tm (6. Onde colocar dados banc?rios para receber) Tj
+/F1 10.5 Tf 1 0 0 1 50 537 Tm (- Para vendas do Google Play: no Play Console, configure o perfil de pagamentos/conta de) Tj
+/F1 10.5 Tf 1 0 0 1 50 522 Tm (comerciante e adicione sua conta banc?ria.) Tj
+/F1 10.5 Tf 1 0 0 1 50 507 Tm (- O nome e pa?s do perfil de pagamentos devem bater com documentos e conta banc?ria quando o) Tj
+/F1 10.5 Tf 1 0 0 1 50 492 Tm (Google pedir verifica??o.) Tj
+/F1 10.5 Tf 1 0 0 1 50 477 Tm (- Dependendo do pa?s, o Google pode pedir verifica??o banc?ria por dep?sito, documentos oficiais) Tj
+/F1 10.5 Tf 1 0 0 1 50 462 Tm (ou informa??es fiscais.) Tj
+/F1 10.5 Tf 1 0 0 1 50 447 Tm (- Para an?ncios do AdMob: configure pagamentos no AdMob/Google Payments. O AdMob pode pedir) Tj
+/F1 10.5 Tf 1 0 0 1 50 432 Tm (verifica??o de identidade, endere?o por PIN e telefone antes do primeiro pagamento.) Tj
+/F1 10.5 Tf 1 0 0 1 50 417 Tm (- Play Console e AdMob podem usar perfis de pagamento relacionados, mas trate os dois cadastros) Tj
+/F1 10.5 Tf 1 0 0 1 50 402 Tm (como verifica??es separadas.) Tj
+/F2 14 Tf 1 0 0 1 50 379 Tm (7. Como publicar na Play Store) Tj
+/F1 10.5 Tf 1 0 0 1 50 357 Tm (- Crie uma conta Google Play Console e finalize a verifica??o de identidade/desenvolvedor.) Tj
+/F1 10.5 Tf 1 0 0 1 50 342 Tm (- Confirme o package name: com.geovane.partygames. Evite mudar depois de publicar.) Tj
+/F1 10.5 Tf 1 0 0 1 50 327 Tm (- Gere o Android App Bundle \(AAB\), preferido para produ??o: npm run build:android:aab, usando EAS.) Tj
+/F1 10.5 Tf 1 0 0 1 50 312 Tm (- No Play Console: Create app, preencha nome, idioma, app/game, gr?tis/pago e declara??es) Tj
+/F1 10.5 Tf 1 0 0 1 50 297 Tm (iniciais.) Tj
+/F1 10.5 Tf 1 0 0 1 50 282 Tm (- Preencha Store Listing: descri??o curta, descri??o completa, ?cone, screenshots, categoria,) Tj
+/F1 10.5 Tf 1 0 0 1 50 267 Tm (contato e pol?tica de privacidade.) Tj
+/F1 10.5 Tf 1 0 0 1 50 252 Tm (- Preencha Data Safety, Ads declaration, Content rating e Target audience. Se usar AdMob, declare) Tj
+/F1 10.5 Tf 1 0 0 1 50 237 Tm (que o app cont?m an?ncios.) Tj
+/F1 10.5 Tf 1 0 0 1 50 222 Tm (- Fa?a teste interno/fechado antes da produ??o. Depois crie release em Production e envie para) Tj
+/F1 10.5 Tf 1 0 0 1 50 207 Tm (revis?o.) Tj
+/F2 14 Tf 1 0 0 1 50 184 Tm (8. Checklist t?cnico para o Party Games) Tj
+/F1 10.5 Tf 1 0 0 1 50 162 Tm (- Tela Premium j? est? pronta como vitrine. Pr?ximo passo: conectar bot?es aos produtos reais do) Tj
+/F1 10.5 Tf 1 0 0 1 50 147 Tm (Play Billing.) Tj
+/F1 10.5 Tf 1 0 0 1 50 132 Tm (- Adicionar isPremium em um contexto separado de monetiza??o.) Tj
+/F1 10.5 Tf 1 0 0 1 50 117 Tm (- Criar src/services/purchases.js com restorePurchases, buyMonthly, buyLifetime e) Tj
+/F1 10.5 Tf 1 0 0 1 50 102 Tm (getPremiumStatus.) Tj
+/F1 10.5 Tf 1 0 0 1 50 87 Tm (- Criar src/services/ads.js e chamar showInterstitialIfAllowed apenas quando isPremium=false.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 2256 >>
+stream
+BT
+/F1 10.5 Tf 1 0 0 1 50 792 Tm (- Adicionar IDs: premium_monthly, premium_lifetime, rewarded_pack_unlock.) Tj
+/F1 10.5 Tf 1 0 0 1 50 777 Tm (- Criar a??o Restaurar compra na ?rea Premium.) Tj
+/F1 10.5 Tf 1 0 0 1 50 762 Tm (- Quando o usu?rio assinar/comprar, salvar entitlement local e esconder an?ncios imediatamente.) Tj
+/F1 10.5 Tf 1 0 0 1 50 747 Tm (- Antes do lan?amento, testar com contas de teste da Play Console e IDs de an?ncio de teste.) Tj
+/F2 14 Tf 1 0 0 1 50 724 Tm (9. Fontes oficiais consultadas) Tj
+/F1 10.5 Tf 1 0 0 1 50 702 Tm (AdMob - documenta??o: https://developers.google.com/admob) Tj
+/F1 10.5 Tf 1 0 0 1 50 687 Tm (AdMob App Open Ads Android: https://developers.google.com/admob/android/app-open) Tj
+/F1 10.5 Tf 1 0 0 1 50 672 Tm (AdMob - verificar identidade: https://support.google.com/admob/answer/13030080) Tj
+/F1 10.5 Tf 1 0 0 1 50 657 Tm (AdMob - verificar dados de pagamento/PIN: https://support.google.com/admob/answer/6149211) Tj
+/F1 10.5 Tf 1 0 0 1 50 642 Tm (Google Play Billing - produtos ?nicos:) Tj
+/F1 10.5 Tf 1 0 0 1 50 627 Tm (https://developer.android.com/google/play/billing/one-time-products) Tj
+/F1 10.5 Tf 1 0 0 1 50 612 Tm (Google Play Billing - assinaturas: https://developer.android.com/google/play/billing/subscriptions) Tj
+/F1 10.5 Tf 1 0 0 1 50 597 Tm (Google Play Billing - tipos de produtos:) Tj
+/F1 10.5 Tf 1 0 0 1 50 582 Tm (https://support.google.com/googleplay/android-developer/answer/14590082) Tj
+/F1 10.5 Tf 1 0 0 1 50 567 Tm (Google Play Developer API: https://developer.android.com/google/play/developer-api) Tj
+/F1 10.5 Tf 1 0 0 1 50 552 Tm (Play Console - criar app: https://support.google.com/googleplay/android-developer/answer/9859152) Tj
+/F1 10.5 Tf 1 0 0 1 50 537 Tm (Play Console - preparar release:) Tj
+/F1 10.5 Tf 1 0 0 1 50 522 Tm (https://support.google.com/googleplay/android-developer/answer/9859348) Tj
+/F1 10.5 Tf 1 0 0 1 50 507 Tm (Play Console - criar perfil de pagamentos:) Tj
+/F1 10.5 Tf 1 0 0 1 50 492 Tm (https://support.google.com/googleplay/android-developer/answer/7161426) Tj
+/F1 10.5 Tf 1 0 0 1 50 477 Tm (Play Console - conta banc?ria de comerciante:) Tj
+/F1 10.5 Tf 1 0 0 1 50 462 Tm (https://support.google.com/googleplay/android-developer/answer/7161440) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 9 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>
+endobj
+10 0 obj
+<< /Type /Catalog /Pages 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000112 00000 n 
+0000000214 00000 n 
+0000004679 00000 n 
+0000004815 00000 n 
+0000009282 00000 n 
+0000009418 00000 n 
+0000011726 00000 n 
+0000011862 00000 n 
+0000011931 00000 n 
+trailer
+<< /Size 11 /Root 10 0 R >>
+startxref
+11981
+%%EOF
