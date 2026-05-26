@@ -1647,6 +1647,23 @@ function AppContent() {
                   ))}
                 </View>
               ) : null}
+              {selectedGame?.id === 'verdade-ou-desafio' && currentRoundKey ? (
+                <View style={[styles.block, { borderColor: selectedGame.themeColor, backgroundColor: `${selectedGame.themeColor}10` }]}>
+                  <Text style={styles.blockTitle}>{t('mode')}</Text>
+                  <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
+                    {['verdade', 'desafio'].map((type) => (
+                      <ChoiceChip
+                        key={type}
+                        active={(selectedGameOptions.type ?? 'verdade') === type}
+                        label={type}
+                        onPress={() => setGameOption('verdade-ou-desafio', 'type', type)}
+                        isRTL={isRTL}
+                        color={selectedGame.themeColor}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
               {!isBombGame(selectedGame?.id) ? (
                 <View style={[styles.finishActions, isRTL && styles.rowReverse]}>
                   {!isBoardGame(selectedGame?.id) ? (
@@ -1673,7 +1690,7 @@ function AppContent() {
                 </View>
               ) : null}
               {selectedGame?.id === 'cidade-dorme' && (
-                <View style={[styles.block, styles.cityBoardBlock, { backgroundColor: `${selectedGame?.themeColor ?? '#38bdf8'}14`, borderColor: selectedGame?.themeColor ?? '#38bdf8' }]}>
+                <View style={[styles.block, styles.cityBoardBlock, { backgroundColor: `${selectedGame?.themeColor ?? '#c084fc'}14`, borderColor: selectedGame?.themeColor ?? '#c084fc' }]}>
                   <Text style={styles.blockTitle}>{t('board')}</Text>
                   <View style={[styles.footerBlock, isRTL && styles.rowReverse]}>
                     <MiniStat label={t('phase')} value={`${cityRound.phase === 'dia' ? t('day') : t('night')} ${cityRound.cycle}`} isRTL={isRTL} color={selectedGame?.themeColor} />
@@ -1712,7 +1729,7 @@ function AppContent() {
                           <Text style={[styles.bombExplodedPlayerName, isRTL && styles.textRight]}>{currentScorePlayer.name}</Text>
                         </View>
                       ) : null}
-                      {scoreRound.prompt ? <Text style={[styles.promptSpotlightLabel, styles.bombPulseLabel, isRTL && styles.textRight]}>{t('category')}</Text> : null}
+                      {scoreRound.prompt ? <Text style={[styles.promptSpotlightLabel, styles.bombPulseLabel, { color: selectedGame?.themeColor ?? '#8b5cf6' }, isRTL && styles.textRight]}>{t('category')}</Text> : null}
                       {scoreRound.prompt ? <Text style={[styles.promptSpotlightValue, styles.bombCategoryValue, isRTL && styles.textRight]}>{scoreRound.prompt}</Text> : null}
                       {roundSecondsLeft != null && !bombExploded ? (
                         <View style={[styles.countdownPill, styles.countdownPillCentered, isRTL && styles.rowReverse]}>
@@ -2368,7 +2385,7 @@ const styles = StyleSheet.create({
   homeSectionCountPill: { minWidth: 38, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#11111a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center' },
   homeSectionCountText: { color: '#ff9cdc', fontSize: 13, fontFamily: FONT_EXTRABOLD },
   quickLinksMuted: { opacity: 0.96 },
-  signalChipCity: { backgroundColor: '#071827', borderWidth: 1, borderColor: '#38bdf8' },
+  signalChipCity: { backgroundColor: '#1f1233', borderWidth: 1, borderColor: '#c084fc' },
   revealCardGlow: { position: 'absolute', top: -20, right: -20, width: 140, height: 140, borderRadius: 999, opacity: 0.75 },
   holdButtonImpostor: { borderColor: '#38bdf8', backgroundColor: '#071827' },
   holdButtonSubtext: { color: '#94a3b8', fontSize: 12, fontFamily: FONT_BOLD, textTransform: 'uppercase', letterSpacing: 1.2 },
@@ -2376,7 +2393,7 @@ const styles = StyleSheet.create({
   starterSpotlightEyebrow: { color: '#7dd3fc', fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', fontFamily: FONT_BOLD },
   starterSpotlightName: { color: '#fff7ed', fontSize: 28, fontFamily: FONT_EXTRABOLD },
   starterSpotlightBody: { color: '#bae6fd', fontSize: 14, lineHeight: 20, fontFamily: FONT_SEMIBOLD },
-  cityBoardBlock: { backgroundColor: '#071827', borderColor: '#38bdf8' },
+  cityBoardBlock: { backgroundColor: '#1f1233', borderColor: '#c084fc' },
   bombPulseLabel: { color: '#fda4af' },
   truthDareCard: { backgroundColor: '#0f2230', borderColor: '#155e75' },
   truthDareCardDare: { backgroundColor: '#331220', borderColor: '#9d174d' },
