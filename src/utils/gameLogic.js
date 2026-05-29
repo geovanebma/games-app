@@ -16,15 +16,16 @@ export function buildAssignments({ players, game, config, secretWord, defaultPla
   const roles = [];
   game.roles.forEach((role) => {
     const count = Number(config[role.id] ?? 0);
-    for (let index = 0; index < count; index += 1) roles.push(role.label);
+    for (let index = 0; index < count; index += 1) roles.push({ id: role.id, label: role.label });
   });
 
   const shuffledRoles = shuffle(roles);
   return players.map((player, index) => ({
     id: `${player.id}-${index}`,
     name: player.name.trim() || defaultPlayerLabel(index),
-    role: shuffledRoles[index],
-    secretWord: game.id === 'impostor' && shuffledRoles[index] !== 'Impostor' ? secretWord : null,
+    role: shuffledRoles[index]?.label,
+    roleId: shuffledRoles[index]?.id,
+    secretWord: game.id === 'impostor' && shuffledRoles[index]?.id !== 'impostores' ? secretWord : null,
   }));
 }
 

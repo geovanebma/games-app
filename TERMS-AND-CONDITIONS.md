@@ -1,5 +1,7 @@
 # Termos e Condicoes - Party Games
 
+Responsavel pelo app: Realizart
+
 ## 1. Uso do app
 Party Games e um aplicativo de entretenimento social voltado para partidas presenciais em grupo.
 
@@ -25,4 +27,4 @@ Party Games pode registrar metricas locais de uso para melhorar fluxo, onboardin
 O app e fornecido como ferramenta de apoio para jogos sociais. O resultado das partidas depende das escolhas e interpretacoes dos participantes.
 
 ## 9. Contato
-Suporte: suporte@partygames.app
+Suporte: suporterealizart@gmail.com

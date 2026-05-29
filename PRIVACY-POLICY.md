@@ -1,5 +1,7 @@
 # Politica de Privacidade - Party Games
 
+Responsavel pelo app: Realizart
+
 ## 1. Dados locais
 Party Games pode salvar no proprio aparelho nomes de jogadores, configuracoes e historico de rodadas para agilizar partidas futuras.
 
@@ -19,4 +21,4 @@ Se Party Games oferecer compras dentro do app, planos premium ou remocao de anun
 O app e focado em entretenimento em grupo e deve ser usado com responsabilidade.
 
 ## 7. Contato
-Suporte: suporte@partygames.app
+Suporte: suporterealizart@gmail.com

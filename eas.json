@@ -15,6 +15,7 @@
       "ios": {}
     },
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },

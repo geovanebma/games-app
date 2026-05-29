@@ -6,14 +6,17 @@ import { useFonts } from 'expo-font';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, BackHandler, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, BackHandler, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameCard } from './src/components/GameCard';
 import { HeaderBar } from './src/components/HeaderBar';
 import { BASE_GAMES, localizeGames } from './src/data/games';
 import { BOMB_CATEGORIES, CHARADES_PACKS, DARE_PACKS, DEEP_QUESTIONS_PACKS, MOST_LIKELY_PACKS, NEVER_PACKS, PICKUP_BATTLE_THEMES, pickRandom, TABOO_PACKS, TRUTH_PACKS, WHAT_WOULD_YOU_DO_PACKS, WHO_AM_I_PACKS, WHO_AT_TABLE_PACKS } from './src/data/gamePacks';
 import { IMPOSTOR_CATEGORIES, IMPOSTOR_WORD_BANK } from './src/data/impostorWords';
+import { getLocalizedImpostorWords, getLocalizedPackList, getLocalizedPromptPack, getOptionLabel } from './src/data/localizedGamePacks';
 import { getRoomName } from './src/data/roomNames';
+import { AD_PLACEMENTS, registerAdAttempt, registerAdImpression, shouldShowAd, showAd } from './src/services/ads';
+import { createFreeEntitlement, isPremiumEntitlement, purchaseLifetimePremium, restoreLifetimePremium } from './src/services/purchases';
 import { createTranslator, getDeviceLanguage, getLocalizedContent, isRtlLanguage, SUPPORTED_LANGUAGE_ORDER } from './src/i18n';
 import { buildAssignments, buildPlayerStats, createRoleConfig, getTotalRoles, pickImpostorWord } from './src/utils/gameLogic';
 
@@ -27,11 +30,25 @@ const FONT_EXTRABOLD = 'Sora_800ExtraBold';
 
 const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 const defaultPlayerLabel = (language, index) => {
-  const labels = { pt: 'Jogador', en: 'Player', zh: 'çŽ©å®¶', hi: 'à¤–à¤¿à¤²à¤¾à¤¡à¤¼à¥€', es: 'Jugador', fr: 'Joueur', ar: 'Ù„Ø§Ø¹Ø¨', bn: 'à¦–à§‡à¦²à§‹à§Ÿà¦¾à§œ', ru: 'Ð˜Ð³Ñ€Ð¾Ðº', ur: 'Ú©Ú¾Ù„Ø§Ú‘ÛŒ' };
+  const labels = { pt: 'Jogador', en: 'Player', zh: '玩家', hi: 'Player', es: 'Jugador', fr: 'Joueur', ar: 'لاعب', bn: 'Player', ru: 'Игрок', ur: 'کھلاڑی' };
   return `${labels[language] ?? labels.en} ${index + 1}`;
 };
-const createPlayer = (index) => ({ id: `player-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`, name: defaultPlayerLabel(getDeviceLanguage(), index) });
-const createPlayers = (total) => Array.from({ length: total }, (_, index) => createPlayer(index));
+const DEFAULT_PLAYER_PREFIXES = ['Jogador', 'Player', '玩家', 'Jugador', 'Joueur', 'لاعب', 'Игрок', 'کھلاڑی'];
+const isDefaultPlayerName = (name) => DEFAULT_PLAYER_PREFIXES.some((prefix) => new RegExp(`^${prefix}\\s+\\d+$`, 'i').test(String(name ?? '').trim()));
+const createPlayer = (index, language = getDeviceLanguage()) => ({ id: `player-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`, name: defaultPlayerLabel(language, index) });
+const createPlayers = (total, language = getDeviceLanguage()) => Array.from({ length: total }, (_, index) => createPlayer(index, language));
+const getPremiumLifetimePrice = (language) => ({
+  pt: 'R$ 19,90',
+  en: '$3.99',
+  zh: '¥29.90',
+  hi: '₹349',
+  es: '€3.99',
+  fr: '€3.99',
+  ar: '$3.99',
+  bn: '৳499',
+  ru: '399 ₽',
+  ur: 'Rs 1,099',
+})[language] ?? '$3.99';
 const createDefaultGameOptions = () => ({
   impostor: { wordMode: 'normal' },
   'cidade-dorme': { startingPhase: 'noite' },
@@ -55,6 +72,10 @@ const createDefaultAppSettings = () => ({
   highContrast: false,
   onboardingSeen: false,
   analyticsConsent: false,
+  acceptedTerms: false,
+  acceptedTermsAt: null,
+  adsEnabled: true,
+  premiumEntitlement: createFreeEntitlement(),
 });
 
 function getRoleIcon(roleId) {
@@ -78,6 +99,7 @@ function getRoleIcon(roleId) {
 
 function AppContent() {
   const insets = useSafeAreaInsets();
+  const windowDimensions = useWindowDimensions();
   const [language, setLanguage] = useState('auto');
   const [screen, setScreen] = useState('home');
   const [history, setHistory] = useState([]);
@@ -100,7 +122,7 @@ function AppContent() {
   const [currentRoundKey, setCurrentRoundKey] = useState(null);
   const [missionOutcome, setMissionOutcome] = useState('success');
   const [scoreBoard, setScoreBoard] = useState({});
-  const [scoreRound, setScoreRound] = useState({ current: 1, letter: 'A', prompt: 'Animais', detail: '', type: '' });
+  const [scoreRound, setScoreRound] = useState({ current: 1, letter: 'A', prompt: '', detail: '', type: '' });
   const [roundSecondsLeft, setRoundSecondsLeft] = useState(null);
   const [activeScorePlayerIndex, setActiveScorePlayerIndex] = useState(0);
   const [impostorStarterName, setImpostorStarterName] = useState('');
@@ -112,6 +134,7 @@ function AppContent() {
   const [notice, setNotice] = useState(null);
   const [gameHelpVisible, setGameHelpVisible] = useState(false);
   const [homeMenuOpen, setHomeMenuOpen] = useState(false);
+  const [termsPopupOpen, setTermsPopupOpen] = useState(false);
   const [rouletteState, setRouletteState] = useState({ visible: false, title: '', items: [], currentIndex: 0, accent: '#fb4ecb' });
   const revealScale = useRef(new Animated.Value(1)).current;
   const revealOpacity = useRef(new Animated.Value(1)).current;
@@ -122,6 +145,8 @@ function AppContent() {
   const bombPulseScale = useRef(new Animated.Value(1)).current;
   const rouletteRunRef = useRef(0);
   const bombPulseLoopRef = useRef(null);
+  const adRuntimeRef = useRef({ lastInterstitialAt: 0, attemptsByPlacement: {}, impressionsByPlacement: {} });
+  const revealAdPendingRef = useRef(false);
 
   const resolvedLanguage = language === 'auto' ? getDeviceLanguage() : language;
   const isRTL = isRtlLanguage(resolvedLanguage);
@@ -135,13 +160,22 @@ function AppContent() {
   const selectedGameOptions = selectedGameId ? gameOptions[selectedGameId] ?? {} : {};
   const currentAssignment = assignments[currentRevealIndex];
   const currentScorePlayer = assignments[activeScorePlayerIndex] ?? null;
+  const hasPremium = isPremiumEntitlement(appSettings.premiumEntitlement);
+  const premiumLifetimePrice = getPremiumLifetimePrice(resolvedLanguage);
   const totalRoles = selectedConfig ? getTotalRoles(selectedConfig) : 0;
+  const homeMaxWidth = 760;
+  const homeHorizontalPadding = windowDimensions.width < 380 ? 14 : 18;
+  const homeGridGap = windowDimensions.width < 380 ? 10 : 14;
+  const homeContentWidth = Math.max(0, Math.min(windowDimensions.width, homeMaxWidth) - homeHorizontalPadding * 2);
+  const homeCardWidth = Math.max(136, Math.floor((homeContentWidth - homeGridGap) / 2));
+  const homeCompactGrid = homeCardWidth < 166;
   const roomLabel = useMemo(() => (selectedGame ? getRoomName(selectedGame.id, roundHistory.length + assignments.length + currentRevealIndex) : ''), [selectedGame, roundHistory.length, assignments.length, currentRevealIndex]);
   const gameHelpItems = useMemo(() => getGameHelpItems(), [selectedGame?.id, selectedGameOptions.mode, selectedGameOptions.infiltratedMode, t]);
   const localizedImpostorCategories = useMemo(
     () => IMPOSTOR_CATEGORIES.map((category) => ({ ...category, localizedLabel: t(`categoryNames.${category.id}`) })),
     [t],
   );
+  const optionLabel = (value) => getOptionLabel(resolvedLanguage, value);
   const languageOptions = useMemo(
     () => [
       { value: 'auto', label: t('automatic') },
@@ -237,6 +271,30 @@ function AppContent() {
     setNotice({ message, tone });
   }
 
+  async function maybeShowAdPlacement(placement, details = '') {
+    if (!appSettings.adsEnabled || hasPremium) return false;
+    adRuntimeRef.current = registerAdAttempt(adRuntimeRef.current, placement);
+    if (!shouldShowAd({ placement, runtime: adRuntimeRef.current, isPremium: hasPremium })) {
+      trackEvent('ad_skipped', `${placement}:${details}`);
+      return false;
+    }
+
+    trackEvent('ad_requested', `${placement}:${details}`);
+    try {
+      const didShow = await showAd({ placement, details });
+      if (didShow) {
+        adRuntimeRef.current = registerAdImpression(adRuntimeRef.current, placement);
+        trackEvent('ad_shown', `${placement}:${details}`);
+      } else {
+        trackEvent('ad_not_ready', `${placement}:${details}`);
+      }
+      return didShow;
+    } catch (error) {
+      pushDiagnostic('warn', 'ad-show-failed', error instanceof Error ? error.message : String(error ?? placement));
+      return false;
+    }
+  }
+
   function handleAppError(event, error, tone = 'error') {
     const details = error instanceof Error ? error.message : String(error ?? '');
     pushDiagnostic(tone, event, details);
@@ -287,8 +345,34 @@ function AppContent() {
 
   useEffect(() => {
     if (!appReady) return;
+    setPlayersByGame((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([gameId, players]) => [
+          gameId,
+          players.map((player, index) => ({
+            ...player,
+            name: isDefaultPlayerName(player.name) ? defaultPlayerLabel(resolvedLanguage, index) : player.name,
+          })),
+        ]),
+      ),
+    );
+  }, [appReady, resolvedLanguage]);
+
+  useEffect(() => {
+    if (!appReady) return;
     AsyncStorage.setItem(DIAGNOSTICS_KEY, JSON.stringify(diagnostics)).catch(() => { });
   }, [appReady, diagnostics]);
+
+  useEffect(() => {
+    if (!appReady || hasPremium) return;
+    restoreLifetimePremium()
+      .then((result) => {
+        if (!result?.entitlement?.active) return;
+        setAppSettings((current) => ({ ...current, premiumEntitlement: result.entitlement, adsEnabled: false }));
+        trackEvent('premium_restored_auto', result.entitlement.productId ?? '');
+      })
+      .catch((error) => pushDiagnostic('warn', 'premium-auto-restore-failed', error instanceof Error ? error.message : String(error ?? '')));
+  }, [appReady, hasPremium]);
 
   useEffect(() => {
     if (!notice) return undefined;
@@ -487,7 +571,7 @@ function AppContent() {
     setCityRound({ phase: 'noite', cycle: 1, eliminatedIds: {} });
     setMissionOutcome('success');
     setScoreBoard({});
-    setScoreRound({ current: 1, letter: 'A', prompt: 'Animais', detail: '', type: '' });
+    setScoreRound({ current: 1, letter: 'A', prompt: '', detail: '', type: '' });
     setActiveScorePlayerIndex(0);
     setBombExploded(false);
     setBombPassCount(0);
@@ -536,9 +620,9 @@ function AppContent() {
   function syncPlayersWithRoleTotal(gameId, nextTotal) {
     setPlayersByGame((current) => {
       const currentPlayers = current[gameId] ?? [];
-      const nextPlayers = Array.from({ length: nextTotal }, (_, index) => currentPlayers[index] ?? createPlayer(index)).map((player, index) => ({
+      const nextPlayers = Array.from({ length: nextTotal }, (_, index) => currentPlayers[index] ?? createPlayer(index, resolvedLanguage)).map((player, index) => ({
         ...player,
-        name: player.name?.trim?.() ? player.name : defaultPlayerLabel(resolvedLanguage, index),
+        name: player.name?.trim?.() && !isDefaultPlayerName(player.name) ? player.name : defaultPlayerLabel(resolvedLanguage, index),
       }));
       return { ...current, [gameId]: nextPlayers };
     });
@@ -584,7 +668,7 @@ function AppContent() {
     if (safeTarget !== rawValue) showNotice(`${t('minPlayersNotice')} ${safeTarget}`, 'info');
     setPlayersByGame((current) => {
       const nextPlayers = [...current[selectedGame.id]];
-      if (safeTarget > nextPlayers.length) for (let index = nextPlayers.length; index < safeTarget; index += 1) nextPlayers.push(createPlayer(index));
+      if (safeTarget > nextPlayers.length) for (let index = nextPlayers.length; index < safeTarget; index += 1) nextPlayers.push(createPlayer(index, resolvedLanguage));
       else nextPlayers.length = safeTarget;
       return { ...current, [selectedGame.id]: nextPlayers };
     });
@@ -600,7 +684,7 @@ function AppContent() {
     if (!selectedGame) return;
     triggerHaptic('selection');
     setPlayersByGame((current) => {
-      const nextPlayers = [...current[selectedGame.id], createPlayer(current[selectedGame.id].length)];
+      const nextPlayers = [...current[selectedGame.id], createPlayer(current[selectedGame.id].length, resolvedLanguage)];
       setPlayerTargetByGame((targetCurrent) => ({ ...targetCurrent, [selectedGame.id]: String(nextPlayers.length) }));
       return { ...current, [selectedGame.id]: nextPlayers };
     });
@@ -671,7 +755,8 @@ function AppContent() {
   }
 
   function pickCharadesPrompt() {
-    return CHARADES_PROMPTS[Math.floor(Math.random() * CHARADES_PROMPTS.length)];
+    const list = getLocalizedPackList(resolvedLanguage, 'charades', selectedGameOptions.category ?? 'livre', CHARADES_PACKS, 'livre');
+    return pickRandom(list.length ? list : CHARADES_PACKS.livre);
   }
 
   function shuffleSample(list, limit = 8) {
@@ -680,31 +765,34 @@ function AppContent() {
 
   function getRouletteCandidates(gameId) {
     if (gameId === 'impostor') {
+      if (resolvedLanguage !== 'pt') return shuffleSample(getLocalizedImpostorWords(resolvedLanguage, IMPOSTOR_WORD_BANK), 10);
       const categoryId = impostorCategoryByGame.impostor;
       if (!categoryId || categoryId === 'todos') return shuffleSample(IMPOSTOR_WORD_BANK, 10);
       const category = IMPOSTOR_CATEGORIES.find((item) => item.id === categoryId);
       return shuffleSample(category?.words?.length ? category.words : IMPOSTOR_WORD_BANK, 10);
     }
-    if (gameId === 'mimica-relampago') return shuffleSample(CHARADES_PACKS[selectedGameOptions.category ?? 'livre'] ?? CHARADES_PACKS.livre, 10);
-    if (gameId === 'passa-a-bomba') return shuffleSample(BOMB_CATEGORIES, 8);
+    if (gameId === 'mimica-relampago') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'charades', selectedGameOptions.category ?? 'livre', CHARADES_PACKS, 'livre'), 10);
+    if (gameId === 'passa-a-bomba') return shuffleSample(getLocalizedPromptPack(resolvedLanguage, 'bomb', BOMB_CATEGORIES), 8);
     if (gameId === 'palavra-proibida') {
-      const pack = TABOO_PACKS[selectedGameOptions.category ?? 'geral'] ?? TABOO_PACKS.geral;
+      const pack = getLocalizedPackList(resolvedLanguage, 'taboo', selectedGameOptions.category ?? 'geral', TABOO_PACKS, 'geral');
       return shuffleSample(pack.map((item) => item.word), 8);
     }
-    if (gameId === 'eu-nunca') return shuffleSample(NEVER_PACKS[selectedGameOptions.mode ?? 'misto'] ?? NEVER_PACKS.misto, 8);
+    if (gameId === 'eu-nunca') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'never', selectedGameOptions.mode ?? 'misto', NEVER_PACKS, 'misto'), 8);
     if (gameId === 'verdade-ou-desafio') {
       const intensity = selectedGameOptions.intensity ?? 'leve';
       const type = selectedGameOptions.type ?? 'verdade';
       const audience = selectedGameOptions.audience ?? 'misto';
-      const truthPool = TRUTH_PACKS[audience] ?? TRUTH_PACKS[intensity] ?? TRUTH_PACKS.leve;
-      const darePool = DARE_PACKS[audience] ?? DARE_PACKS[intensity] ?? DARE_PACKS.leve;
+      const truthPack = getLocalizedPromptPack(resolvedLanguage, 'truth', TRUTH_PACKS);
+      const darePack = getLocalizedPromptPack(resolvedLanguage, 'dare', DARE_PACKS);
+      const truthPool = truthPack[audience] ?? truthPack[intensity] ?? truthPack.leve;
+      const darePool = darePack[audience] ?? darePack[intensity] ?? darePack.leve;
       return shuffleSample(type === 'desafio' ? darePool : truthPool, 8);
     }
-    if (gameId === 'batalha-de-frases') return shuffleSample(PICKUP_BATTLE_THEMES, 6);
-    if (gameId === 'se-fosse-voce') return shuffleSample(WHAT_WOULD_YOU_DO_PACKS[selectedGameOptions.mode ?? 'misto'] ?? WHAT_WOULD_YOU_DO_PACKS.misto, 8);
-    if (gameId === 'quem-da-mesa') return shuffleSample(WHO_AT_TABLE_PACKS[selectedGameOptions.mode ?? 'divertido'] ?? WHO_AT_TABLE_PACKS.divertido, 8);
-    if (gameId === 'pergunta-pesada') return shuffleSample(DEEP_QUESTIONS_PACKS[selectedGameOptions.intensity ?? 'leve'] ?? DEEP_QUESTIONS_PACKS.leve, 8);
-    if (gameId === 'quem-mais-provavel') return shuffleSample(MOST_LIKELY_PACKS[selectedGameOptions.mode ?? 'amigos'] ?? MOST_LIKELY_PACKS.amigos, 8);
+    if (gameId === 'batalha-de-frases') return shuffleSample(getLocalizedPromptPack(resolvedLanguage, 'pickup', PICKUP_BATTLE_THEMES), 6);
+    if (gameId === 'se-fosse-voce') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'whatif', selectedGameOptions.mode ?? 'misto', WHAT_WOULD_YOU_DO_PACKS, 'misto'), 8);
+    if (gameId === 'quem-da-mesa') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'tablewho', selectedGameOptions.mode ?? 'divertido', WHO_AT_TABLE_PACKS, 'divertido'), 8);
+    if (gameId === 'pergunta-pesada') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'deep', selectedGameOptions.intensity ?? 'leve', DEEP_QUESTIONS_PACKS, 'leve'), 8);
+    if (gameId === 'quem-mais-provavel') return shuffleSample(getLocalizedPackList(resolvedLanguage, 'likely', selectedGameOptions.mode ?? 'amigos', MOST_LIKELY_PACKS, 'amigos'), 8);
     return [];
   }
 
@@ -762,7 +850,7 @@ function AppContent() {
 
   function buildIdentityAssignments(players) {
     const category = selectedGameOptions.category ?? 'personagens';
-    const source = WHO_AM_I_PACKS[category] ?? WHO_AM_I_PACKS.personagens;
+    const source = getLocalizedPackList(resolvedLanguage, 'identity', category, WHO_AM_I_PACKS, 'personagens');
     const shuffled = [...source].sort(() => Math.random() - 0.5);
     return players.map((player, index) => ({
       id: `${player.id}-${index}`,
@@ -777,86 +865,88 @@ function AppContent() {
       return {
         prompt: pickCharadesPrompt(),
         detail: `${selectedGameOptions.timer ?? '60'}s`,
-        type: selectedGameOptions.category ?? 'livre',
+        type: optionLabel(selectedGameOptions.category ?? 'livre'),
       };
     }
     if (gameId === 'passa-a-bomba') {
       return {
-        prompt: pickRandom(BOMB_CATEGORIES),
+        prompt: pickRandom(getLocalizedPromptPack(resolvedLanguage, 'bomb', BOMB_CATEGORIES)),
         detail: '',
         type: '',
       };
     }
     if (gameId === 'palavra-proibida') {
-      const pack = TABOO_PACKS[selectedGameOptions.category ?? 'geral'] ?? TABOO_PACKS.geral;
+      const pack = getLocalizedPackList(resolvedLanguage, 'taboo', selectedGameOptions.category ?? 'geral', TABOO_PACKS, 'geral');
       const picked = pickRandom(pack);
       return {
         prompt: picked.word,
         detail: picked.forbidden.join(' - '),
-        type: selectedGameOptions.category ?? 'geral',
+        type: optionLabel(selectedGameOptions.category ?? 'geral'),
       };
     }
     if (gameId === 'eu-nunca') {
       const mode = selectedGameOptions.mode ?? 'misto';
       return {
-        prompt: pickRandom(NEVER_PACKS[mode] ?? NEVER_PACKS.misto),
-        detail: mode,
-        type: mode,
+        prompt: pickRandom(getLocalizedPackList(resolvedLanguage, 'never', mode, NEVER_PACKS, 'misto')),
+        detail: optionLabel(mode),
+        type: optionLabel(mode),
       };
     }
     if (gameId === 'verdade-ou-desafio') {
       const intensity = selectedGameOptions.intensity ?? 'leve';
       const type = selectedGameOptions.type ?? 'verdade';
       const audience = selectedGameOptions.audience ?? 'misto';
-      const audienceAwareTruth = TRUTH_PACKS[audience] ?? TRUTH_PACKS[intensity] ?? TRUTH_PACKS.leve;
-      const audienceAwareDare = DARE_PACKS[audience] ?? DARE_PACKS[intensity] ?? DARE_PACKS.leve;
+      const truthPack = getLocalizedPromptPack(resolvedLanguage, 'truth', TRUTH_PACKS);
+      const darePack = getLocalizedPromptPack(resolvedLanguage, 'dare', DARE_PACKS);
+      const audienceAwareTruth = truthPack[audience] ?? truthPack[intensity] ?? truthPack.leve;
+      const audienceAwareDare = darePack[audience] ?? darePack[intensity] ?? darePack.leve;
       const list = type === 'desafio' ? audienceAwareDare : audienceAwareTruth;
       return {
         prompt: pickRandom(list),
         detail: '',
-        type,
+        type: optionLabel(type),
       };
     }
     if (gameId === 'batalha-de-frases') {
       return {
-        prompt: selectedGameOptions.theme ?? pickRandom(PICKUP_BATTLE_THEMES),
+        prompt: selectedGameOptions.theme ?? pickRandom(getLocalizedPromptPack(resolvedLanguage, 'pickup', PICKUP_BATTLE_THEMES)),
         detail: `${selectedGameOptions.rounds ?? '5'} ${t('round')}`,
-        type: 'battle',
+        type: optionLabel('battle'),
       };
     }
     if (gameId === 'se-fosse-voce') {
       const mode = selectedGameOptions.mode ?? 'misto';
       return {
-        prompt: pickRandom(WHAT_WOULD_YOU_DO_PACKS[mode] ?? WHAT_WOULD_YOU_DO_PACKS.misto),
-        detail: mode,
-        type: mode,
+        prompt: pickRandom(getLocalizedPackList(resolvedLanguage, 'whatif', mode, WHAT_WOULD_YOU_DO_PACKS, 'misto')),
+        detail: optionLabel(mode),
+        type: optionLabel(mode),
       };
     }
     if (gameId === 'quem-da-mesa') {
       const mode = selectedGameOptions.mode ?? 'divertido';
       return {
-        prompt: pickRandom(WHO_AT_TABLE_PACKS[mode] ?? WHO_AT_TABLE_PACKS.divertido),
-        detail: mode,
-        type: mode,
+        prompt: pickRandom(getLocalizedPackList(resolvedLanguage, 'tablewho', mode, WHO_AT_TABLE_PACKS, 'divertido')),
+        detail: optionLabel(mode),
+        type: optionLabel(mode),
       };
     }
     if (gameId === 'pergunta-pesada') {
       const intensity = selectedGameOptions.intensity ?? 'leve';
       return {
-        prompt: pickRandom(DEEP_QUESTIONS_PACKS[intensity] ?? DEEP_QUESTIONS_PACKS.leve),
-        detail: intensity,
-        type: intensity,
+        prompt: pickRandom(getLocalizedPackList(resolvedLanguage, 'deep', intensity, DEEP_QUESTIONS_PACKS, 'leve')),
+        detail: optionLabel(intensity),
+        type: optionLabel(intensity),
       };
     }
     if (gameId === 'quem-mais-provavel') {
       const mode = selectedGameOptions.mode ?? 'amigos';
       return {
-        prompt: pickRandom(MOST_LIKELY_PACKS[mode] ?? MOST_LIKELY_PACKS.amigos),
-        detail: mode,
-        type: mode,
+        prompt: pickRandom(getLocalizedPackList(resolvedLanguage, 'likely', mode, MOST_LIKELY_PACKS, 'amigos')),
+        detail: optionLabel(mode),
+        type: optionLabel(mode),
       };
     }
-    return { prompt: 'Animais', detail: '', type: '' };
+    return { prompt: optionLabel('animais'), detail: '', type: '' };
   }
 
   function updateScore(playerId, delta) {
@@ -881,6 +971,7 @@ function AppContent() {
   async function advanceScoreRound() {
     if (!currentRoundKey && selectedGame?.id === 'verdade-ou-desafio') return;
     triggerHaptic('selection');
+    await maybeShowAdPlacement(AD_PLACEMENTS.ROUND_END, selectedGame?.id ?? '');
     if (currentRoundKey) saveRoundToHistory();
     setRoundSecondsLeft(null);
     setTruthOrDareTimedOut(false);
@@ -905,9 +996,32 @@ function AppContent() {
     setAppSettings((current) => ({ ...current, [key]: !current[key] }));
   }
 
-  function finishTruthOrDareRound() {
+  function acceptTerms() {
+    triggerHaptic('success');
+    setTermsPopupOpen(false);
+    setAppSettings((current) => ({ ...current, acceptedTerms: true, acceptedTermsAt: new Date().toISOString() }));
+  }
+
+  async function buyLifetimePremium() {
+    triggerHaptic('selection');
+    trackEvent('premium_cta', 'lifetime_purchase');
+    try {
+      const result = await purchaseLifetimePremium();
+      if (result?.entitlement?.active) {
+        setAppSettings((current) => ({ ...current, premiumEntitlement: result.entitlement, adsEnabled: false }));
+        showNotice(t('premiumPurchaseSuccess'), 'success');
+        return;
+      }
+      showNotice(t('premiumBillingUnavailable'), 'info');
+    } catch (error) {
+      handleAppError('premium-purchase', error);
+    }
+  }
+
+  async function finishTruthOrDareRound() {
     if (selectedGame?.id !== 'verdade-ou-desafio' || !currentRoundKey) return;
     triggerHaptic('success');
+    await maybeShowAdPlacement(AD_PLACEMENTS.ROUND_END, selectedGame.id);
     saveRoundToHistory();
     setRoundSecondsLeft(null);
     setTruthOrDareTimedOut(false);
@@ -992,12 +1106,14 @@ function AppContent() {
     }
     const selectedWord =
       selectedGame.id === 'impostor'
-        ? pickImpostorWord({
+        ? resolvedLanguage === 'pt'
+          ? pickImpostorWord({
           categoryId: impostorCategoryByGame.impostor,
           wordMode: 'normal',
           categories: IMPOSTOR_CATEGORIES,
           wordBank: IMPOSTOR_WORD_BANK,
-        })
+          })
+          : pickRandom(getLocalizedImpostorWords(resolvedLanguage, IMPOSTOR_WORD_BANK))
         : '';
     const nextAssignments = buildAssignments({
       players: cleanPlayers,
@@ -1052,7 +1168,7 @@ function AppContent() {
           : isBoardGame(selectedGame.id)
             ? scoreRound.detail || scoreRound.type || ''
             : selectedGame.id === 'quem-sou-eu'
-              ? selectedGameOptions.category ?? 'personagens'
+              ? optionLabel(selectedGameOptions.category ?? 'personagens')
               : selectedGame.id === 'impostor'
                 ? impostorWord
                 : '',
@@ -1071,18 +1187,30 @@ function AppContent() {
     setRevealedIds((current) => ({ ...current, [currentAssignment.id]: true }));
   }
 
-  function handlePressIn() {
+  async function handlePressIn() {
+    if (!currentAssignment || revealedIds[currentAssignment.id] || revealAdPendingRef.current) {
+      setCardPressed(true);
+      if (!appSettings.reducedMotion) Animated.spring(revealScale, { toValue: 1.03, useNativeDriver: true, friction: 7, tension: 90 }).start();
+      return;
+    }
+
+    revealAdPendingRef.current = true;
+    const didShowAd = await maybeShowAdPlacement(AD_PLACEMENTS.BEFORE_REVEAL, selectedGame?.id ?? '');
+    revealAdPendingRef.current = false;
+    if (didShowAd) return;
+
     setCardPressed(true);
     if (!appSettings.reducedMotion) Animated.spring(revealScale, { toValue: 1.03, useNativeDriver: true, friction: 7, tension: 90 }).start();
   }
 
   function handlePressOut() {
+    if (revealAdPendingRef.current) return;
     setCardPressed(false);
     if (!appSettings.reducedMotion) Animated.spring(revealScale, { toValue: 1, useNativeDriver: true, friction: 7, tension: 90 }).start();
     markCurrentAsSeen();
   }
 
-  function goToNextReveal() {
+  async function goToNextReveal() {
     if (!currentAssignment || !revealedIds[currentAssignment.id]) {
       showNotice(t('errorRevealFirst'), 'info');
       return;
@@ -1090,6 +1218,7 @@ function AppContent() {
     triggerHaptic('selection');
     setCardPressed(false);
     if (currentRevealIndex === assignments.length - 1) {
+      await maybeShowAdPlacement(AD_PLACEMENTS.ROUND_END, selectedGame?.id ?? '');
       goTo('final');
       return;
     }
@@ -1102,10 +1231,10 @@ function AppContent() {
     if (selectedGame.id === 'cidade-dorme') return `${t('start')} - ${selectedGameOptions.startingPhase === 'dia' ? t('day') : t('night')}`;
     if (selectedGame.id === 'passa-a-bomba') return hasLiveBoardRound ? scoreRound.prompt : `${selectedGameOptions.timer ?? '30'}s`;
     if (selectedGame.id === 'verdade-ou-desafio') {
-      return hasLiveBoardRound ? `${scoreRound.type ? `${scoreRound.type} | ` : ''}${scoreRound.prompt}` : `${selectedGameOptions.type ?? 'verdade'} | ${selectedGameOptions.timer ?? '30'}s`;
+      return hasLiveBoardRound ? `${scoreRound.type ? `${scoreRound.type} | ` : ''}${scoreRound.prompt}` : `${optionLabel(selectedGameOptions.type ?? 'verdade')} | ${selectedGameOptions.timer ?? '30'}s`;
     }
     if (isBoardGame(selectedGame.id)) return `${scoreRound.detail || selectedGameOptions.timer || selectedGameOptions.rounds || ''} | ${scoreRound.prompt}`;
-    if (selectedGame.id === 'quem-sou-eu') return selectedGameOptions.category ?? 'personagens';
+    if (selectedGame.id === 'quem-sou-eu') return optionLabel(selectedGameOptions.category ?? 'personagens');
     if (selectedGame.id === 'impostor') {
       const categoryLabel = impostorCategoryByGame.impostor === 'todos' ? t('all') : t(`categoryNames.${impostorCategoryByGame.impostor}`);
       return categoryLabel;
@@ -1226,8 +1355,9 @@ function AppContent() {
   const usesFlexibleParticipants = selectedGame ? isBoardGame(selectedGame.id) || isIdentityGame(selectedGame.id) : false;
   const canStart = selectedGame && enoughPlayers && (usesFlexibleParticipants || playerCountMatchesRoles);
 
-  function restartSelectedGame() {
+  async function restartSelectedGame() {
     triggerHaptic('selection');
+    await maybeShowAdPlacement(AD_PLACEMENTS.PLAY_AGAIN, selectedGame?.id ?? '');
     if (currentRoundKey) saveRoundToHistory();
     resetRoundState();
     setScreen('config');
@@ -1275,7 +1405,7 @@ function AppContent() {
         ) : null}
         <Animated.View style={{ flex: 1, opacity: screenOpacity, transform: [{ translateY: screenTranslate }] }}>
           {screen === 'home' && (
-            <ScrollView contentContainerStyle={[styles.homeScrollContent, { paddingBottom: Math.max(insets.bottom + 28, 40) }]}>
+            <ScrollView contentContainerStyle={[styles.homeScrollContent, { width: '100%', maxWidth: homeMaxWidth, alignSelf: 'center', paddingHorizontal: homeHorizontalPadding, paddingBottom: Math.max(insets.bottom + 28, 40) }]}>
               <View style={[styles.homeTopActions, isRTL && styles.rowReverse]}>
                 <SmallMenuButton icon="diamond-stone" label={t('premium')} onPress={() => { trackEvent('premium_open', 'home'); goTo('premium'); }} isRTL={isRTL} compact />
                 <Pressable
@@ -1311,9 +1441,9 @@ function AppContent() {
                 <Image resizeMode="contain" source={require('./assets/party-games-logo.png')} style={styles.homeHeroLogo} />
               </View>
 
-              <View style={styles.homeGameGrid}>
+              <View style={[styles.homeGameGrid, { columnGap: homeGridGap, rowGap: homeGridGap }]}>
                 {visibleGames.map((game) => (
-                  <GameCard key={game.id} game={game} isRTL={isRTL} variant="grid" onPress={() => openGame(game.id)} />
+                  <GameCard key={game.id} game={game} isRTL={isRTL} variant="grid" width={homeCardWidth} compact={homeCompactGrid} onPress={() => openGame(game.id)} />
                 ))}
               </View>
 
@@ -1409,7 +1539,7 @@ function AppContent() {
                   <View style={styles.optionLine}>
                     <Text style={styles.optionLabel}>{t('category')}</Text>
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                      {['geral', 'festa', 'familia'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={category} onPress={() => setGameOption('palavra-proibida', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                      {['geral', 'festa', 'familia'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={optionLabel(category)} onPress={() => setGameOption('palavra-proibida', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                     </View>
                   </View>
                   <View style={styles.optionLine}>
@@ -1424,7 +1554,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('category')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['personagens', 'animais', 'profissoes'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={category} onPress={() => setGameOption('quem-sou-eu', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['personagens', 'animais', 'profissoes'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={optionLabel(category)} onPress={() => setGameOption('quem-sou-eu', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1432,7 +1562,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['misto', 'familia', 'amigos', 'casal', 'festa'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('eu-nunca', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['misto', 'familia', 'amigos', 'casal', 'festa'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={optionLabel(mode)} onPress={() => setGameOption('eu-nunca', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1442,19 +1572,19 @@ function AppContent() {
                   <View style={styles.optionLine}>
                     <Text style={styles.optionLabel}>{t('mode')}</Text>
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                      {['verdade', 'desafio'].map((type) => <ChoiceChip key={type} active={selectedGameOptions.type === type} label={type} onPress={() => setGameOption('verdade-ou-desafio', 'type', type)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                      {['verdade', 'desafio'].map((type) => <ChoiceChip key={type} active={selectedGameOptions.type === type} label={optionLabel(type)} onPress={() => setGameOption('verdade-ou-desafio', 'type', type)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                     </View>
                   </View>
                   <View style={styles.optionLine}>
                     <Text style={styles.optionLabel}>{t('category')}</Text>
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                      {['leve', 'medio'].map((intensity) => <ChoiceChip key={intensity} active={selectedGameOptions.intensity === intensity} label={intensity} onPress={() => setGameOption('verdade-ou-desafio', 'intensity', intensity)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                      {['leve', 'medio'].map((intensity) => <ChoiceChip key={intensity} active={selectedGameOptions.intensity === intensity} label={optionLabel(intensity)} onPress={() => setGameOption('verdade-ou-desafio', 'intensity', intensity)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                     </View>
                   </View>
                   <View style={styles.optionLine}>
                     <Text style={styles.optionLabel}>{t('players')}</Text>
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                      {['misto', 'amigos', 'familia', 'casal'].map((audience) => <ChoiceChip key={audience} active={selectedGameOptions.audience === audience} label={audience} onPress={() => setGameOption('verdade-ou-desafio', 'audience', audience)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                      {['misto', 'amigos', 'familia', 'casal'].map((audience) => <ChoiceChip key={audience} active={selectedGameOptions.audience === audience} label={optionLabel(audience)} onPress={() => setGameOption('verdade-ou-desafio', 'audience', audience)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                     </View>
                   </View>
                 </View>
@@ -1466,7 +1596,7 @@ function AppContent() {
                     <Text style={styles.optionLabel}>{t('category')}</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                       <View style={styles.categoryRow}>
-                        {PICKUP_BATTLE_THEMES.map((theme) => <CategoryChip key={theme} active={selectedGameOptions.theme === theme} label={theme} onPress={() => setGameOption('batalha-de-frases', 'theme', theme)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                        {getLocalizedPromptPack(resolvedLanguage, 'pickup', PICKUP_BATTLE_THEMES).map((theme) => <CategoryChip key={theme} active={selectedGameOptions.theme === theme} label={theme} onPress={() => setGameOption('batalha-de-frases', 'theme', theme)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                       </View>
                     </ScrollView>
                   </View>
@@ -1482,7 +1612,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['misto', 'festa', 'casal', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('se-fosse-voce', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['misto', 'festa', 'casal', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={optionLabel(mode)} onPress={() => setGameOption('se-fosse-voce', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1490,7 +1620,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['divertido', 'caotico', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('quem-da-mesa', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['divertido', 'caotico', 'familia'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={optionLabel(mode)} onPress={() => setGameOption('quem-da-mesa', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1498,7 +1628,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('category')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['leve', 'intensa'].map((intensity) => <ChoiceChip key={intensity} active={selectedGameOptions.intensity === intensity} label={intensity} onPress={() => setGameOption('pergunta-pesada', 'intensity', intensity)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['leve', 'intensa'].map((intensity) => <ChoiceChip key={intensity} active={selectedGameOptions.intensity === intensity} label={optionLabel(intensity)} onPress={() => setGameOption('pergunta-pesada', 'intensity', intensity)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1506,7 +1636,7 @@ function AppContent() {
                 <View style={styles.block}>
                   <Text style={styles.blockTitle}>{t('mode')}</Text>
                   <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                    {['amigos', 'familia', 'casal'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={mode} onPress={() => setGameOption('quem-mais-provavel', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                    {['amigos', 'familia', 'casal'].map((mode) => <ChoiceChip key={mode} active={selectedGameOptions.mode === mode} label={optionLabel(mode)} onPress={() => setGameOption('quem-mais-provavel', 'mode', mode)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                   </View>
                 </View>
               )}
@@ -1528,7 +1658,7 @@ function AppContent() {
                   <View style={styles.optionLine}>
                     <Text style={styles.optionLabel}>{t('category')}</Text>
                     <View style={[styles.inlineOptions, isRTL && styles.rowReverseWrap]}>
-                      {['livre', 'animais', 'objetos'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={category} onPress={() => setGameOption('mimica-relampago', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
+                      {['livre', 'animais', 'objetos'].map((category) => <ChoiceChip key={category} active={selectedGameOptions.category === category} label={optionLabel(category)} onPress={() => setGameOption('mimica-relampago', 'category', category)} isRTL={isRTL} color={selectedGame.themeColor} />)}
                     </View>
                   </View>
                 </View>
@@ -1575,7 +1705,7 @@ function AppContent() {
                 <IconLabelButton icon="account-switch-outline" label={t('restoreRoles')} onPress={restoreRolesOnly} isRTL={isRTL} color={selectedGame.themeColor} />
               </View>
               <View style={[styles.actionRow, isRTL && styles.rowReverse]}>
-                <Pressable accessibilityRole="button" accessibilityLabel={`${t('startDrawA11y')} ${selectedGame.title}`} accessibilityHint={t('draw')} style={[styles.primaryButton, { backgroundColor: selectedGame.themeColor, shadowColor: selectedGame.themeColor }, !canStart && styles.buttonDisabled]} onPress={startDraw} disabled={!canStart}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${t('startDrawA11y')} ${selectedGame.title}`} accessibilityHint={t('draw')} style={[styles.primaryButton, { borderColor: selectedGame.themeColor, shadowColor: selectedGame.themeColor }, !canStart && styles.buttonDisabled]} onPress={startDraw} disabled={!canStart}>
                   <MaterialCommunityIcons color="#fff7ed" name="cards-playing-outline" size={18} />
                   <Text style={styles.primaryButtonText}>{t('draw')}</Text>
                 </Pressable>
@@ -1626,7 +1756,7 @@ function AppContent() {
                   )}
                 </Pressable>
               </Animated.View>
-              <Pressable accessibilityRole="button" accessibilityLabel={currentRevealIndex === assignments.length - 1 ? t('finishReveal') : t('nextPlayer')} style={[styles.nextButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }, (!revealedIds[currentAssignment.id] || cardPressed) && styles.buttonDisabled]} onPress={goToNextReveal} disabled={!revealedIds[currentAssignment.id] || cardPressed}>
+              <Pressable accessibilityRole="button" accessibilityLabel={currentRevealIndex === assignments.length - 1 ? t('finishReveal') : t('nextPlayer')} style={[styles.nextButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }, (!revealedIds[currentAssignment.id] || cardPressed) && styles.buttonDisabled]} onPress={goToNextReveal} disabled={!revealedIds[currentAssignment.id] || cardPressed}>
                 <MaterialCommunityIcons color="#fff7ed" name={isRTL ? 'arrow-left' : 'arrow-right'} size={18} />
                 <Text style={styles.nextButtonText}>{currentRevealIndex === assignments.length - 1 ? t('finish') : t('next')}</Text>
               </Pressable>
@@ -1655,7 +1785,7 @@ function AppContent() {
                       <ChoiceChip
                         key={type}
                         active={(selectedGameOptions.type ?? 'verdade') === type}
-                        label={type}
+                        label={optionLabel(type)}
                         onPress={() => setGameOption('verdade-ou-desafio', 'type', type)}
                         isRTL={isRTL}
                         color={selectedGame.themeColor}
@@ -1667,17 +1797,17 @@ function AppContent() {
               {!isBombGame(selectedGame?.id) ? (
                 <View style={[styles.finishActions, isRTL && styles.rowReverse]}>
                   {!isBoardGame(selectedGame?.id) ? (
-                    <Pressable accessibilityRole="button" accessibilityLabel={t('showAllRoles')} accessibilityHint={t('showAllRolesHint')} style={[styles.primaryButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={() => setShowFinalRoles(true)}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={t('showAllRoles')} accessibilityHint={t('showAllRolesHint')} style={[styles.primaryButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={() => setShowFinalRoles(true)}>
                       <MaterialCommunityIcons color="#fff7ed" name="eye-outline" size={18} />
                       <Text style={styles.primaryButtonText}>{t('reveal')}</Text>
                     </Pressable>
                   ) : selectedGame?.id === 'verdade-ou-desafio' && !currentRoundKey ? (
-                    <Pressable style={[styles.primaryButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={restartSelectedGame}>
+                    <Pressable style={[styles.primaryButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={restartSelectedGame}>
                       <MaterialCommunityIcons color="#fff7ed" name="restart" size={18} />
                       <Text style={styles.primaryButtonText}>{t('playAgain')}</Text>
                     </Pressable>
                   ) : (
-                    <Pressable style={[styles.primaryButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={advanceScoreRound}>
+                    <Pressable style={[styles.primaryButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={advanceScoreRound}>
                       <MaterialCommunityIcons color="#fff7ed" name="skip-next-circle-outline" size={18} />
                       <Text style={styles.primaryButtonText}>{t('next')}</Text>
                     </Pressable>
@@ -1744,7 +1874,7 @@ function AppContent() {
                         <>
                           <Text style={styles.bombBoomText}>BOOM!</Text>
                           <Text style={[styles.promptSpotlightValue, styles.bombLostText, isRTL && styles.textRight]}>{t('bombLost')}</Text>
-                          <Pressable style={[styles.cardActionButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={restartSelectedGame}>
+                          <Pressable style={[styles.cardActionButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={restartSelectedGame}>
                             <MaterialCommunityIcons color="#fff7ed" name="restart" size={18} />
                             <Text style={styles.primaryButtonText}>{t('playAgain')}</Text>
                           </Pressable>
@@ -1757,7 +1887,7 @@ function AppContent() {
                               <Text style={[styles.bombHolderName, isRTL && styles.textRight]}>{currentScorePlayer.name}</Text>
                             </View>
                           ) : null}
-                          <Pressable style={[styles.cardActionButton, { backgroundColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={passBombToNextPlayer} disabled={!currentScorePlayer}>
+                          <Pressable style={[styles.cardActionButton, { borderColor: selectedGame?.themeColor ?? '#fb4ecb', shadowColor: selectedGame?.themeColor ?? '#fb4ecb' }]} onPress={passBombToNextPlayer} disabled={!currentScorePlayer}>
                             <MaterialCommunityIcons color="#fff7ed" name={isRTL ? 'arrow-left-bold-circle-outline' : 'arrow-right-bold-circle-outline'} size={18} />
                             <Text style={styles.primaryButtonText}>{t('passBomb')}</Text>
                           </Pressable>
@@ -1771,7 +1901,7 @@ function AppContent() {
                           {currentScorePlayer ? <Text style={[styles.promptSpotlightLabel, styles.truthDareTurnLabel, isRTL && styles.textRight]}>{t('turnOf')} {currentScorePlayer.name}</Text> : null}
                           {scoreRound.type ? (
                             <View style={[styles.truthDareModeBadge, { backgroundColor: `${selectedGame?.themeColor ?? '#fb4ecb'}22`, borderColor: selectedGame?.themeColor ?? '#fb4ecb' }, isRTL && styles.rowReverse]}>
-                              <MaterialCommunityIcons color="#fff7ed" name={scoreRound.type?.toLowerCase() === 'desafio' ? 'lightning-bolt' : 'chat-processing-outline'} size={14} />
+                              <MaterialCommunityIcons color="#fff7ed" name={(selectedGameOptions.type ?? 'verdade') === 'desafio' ? 'lightning-bolt' : 'chat-processing-outline'} size={14} />
                               <Text style={[styles.truthDareModeBadgeText, isRTL && styles.textRight]}>{scoreRound.type}</Text>
                             </View>
                           ) : null}
@@ -1862,44 +1992,26 @@ function AppContent() {
                     <Text style={styles.premiumBadgeText}>{t('premiumAccess')}</Text>
                   </View>
                   <View style={styles.premiumSoonPill}>
-                    <Text style={styles.premiumSoonText}>{t('premiumStatusSoon')}</Text>
+                    <Text style={styles.premiumSoonText}>{hasPremium ? t('premiumActive') : t('premiumOneTime')}</Text>
                   </View>
                 </View>
                 <Text style={[styles.premiumHeroTitle, isRTL && styles.textRight]}>{t('premiumHeadline')}</Text>
                 <Text style={[styles.premiumHeroText, isRTL && styles.textRight]}>{t('premiumSubhead')}</Text>
               </View>
 
-              <View style={[styles.premiumPlans, isRTL && styles.rowReverse]}>
+              <View style={styles.premiumPlansSingle}>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`${t('premiumMonthly')} R$ 9,90`}
-                  style={[styles.premiumPlanCard, styles.premiumPlanFeatured]}
-                  onPress={() => {
-                    trackEvent('premium_cta', 'monthly');
-                    showNotice(t('premiumComingSoon'), 'info');
-                  }}
-                >
-                  <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
-                    <Text style={styles.priceLabel}>{t('premiumMonthly')}</Text>
-                    <Text style={styles.priceTag}>{t('premiumPopular')}</Text>
-                  </View>
-                  <Text style={styles.priceValue}>R$ 9,90</Text>
-                  <Text style={[styles.priceTagMuted, isRTL && styles.textRight]}>{t('premiumPlanMonthlyNote')}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${t('premiumLifetime')} R$ 29,90`}
-                  style={styles.premiumPlanCard}
-                  onPress={() => {
-                    trackEvent('premium_cta', 'lifetime');
-                    showNotice(t('premiumComingSoon'), 'info');
-                  }}
+                  accessibilityLabel={`${t('premiumLifetime')} ${premiumLifetimePrice}`}
+                  style={[styles.premiumPlanCard, styles.premiumPlanFeatured, styles.premiumPlanSingle]}
+                  onPress={buyLifetimePremium}
+                  disabled={hasPremium}
                 >
                   <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
                     <Text style={styles.priceLabel}>{t('premiumLifetime')}</Text>
-                    <Text style={[styles.priceTag, styles.priceTagBlue]}>{t('premiumBestValue')}</Text>
+                    <Text style={styles.priceTag}>{hasPremium ? t('premiumActive') : t('premiumBestValue')}</Text>
                   </View>
-                  <Text style={styles.priceValue}>R$ 29,90</Text>
+                  <Text style={styles.priceValue}>{premiumLifetimePrice}</Text>
                   <Text style={[styles.priceTagMuted, isRTL && styles.textRight]}>{t('premiumPlanLifetimeNote')}</Text>
                 </Pressable>
               </View>
@@ -1933,17 +2045,15 @@ function AppContent() {
               </View>
 
               <View style={styles.block}>
-                <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('premiumReadyNote')}</Text>
+                <Text style={[styles.infoText, isRTL && styles.textRight]}>{hasPremium ? t('premiumOwnedNote') : t('premiumReadyNote')}</Text>
                 <View style={[styles.actionRow, isRTL && styles.rowReverse]}>
                   <Pressable
-                    style={styles.primaryButton}
-                    onPress={() => {
-                      trackEvent('premium_cta', 'plans');
-                      showNotice(t('premiumComingSoon'), 'info');
-                    }}
+                    style={[styles.primaryButton, hasPremium && styles.primaryButtonDisabled]}
+                    onPress={buyLifetimePremium}
+                    disabled={hasPremium}
                   >
                     <MaterialCommunityIcons color="#fff7ed" name="crown-outline" size={18} />
-                    <Text style={styles.primaryButtonText}>{t('premiumCta')}</Text>
+                    <Text style={styles.primaryButtonText}>{hasPremium ? t('premiumActive') : t('premiumCta')}</Text>
                   </Pressable>
                   <IconLabelButton
                     icon="chart-line"
@@ -2014,6 +2124,7 @@ function AppContent() {
                 <SettingRow active={appSettings.reducedMotion} icon="motion-outline" label={t('hideMotion')} onPress={() => toggleSetting('reducedMotion')} isRTL={isRTL} />
                 <SettingRow active={appSettings.highContrast} icon="circle-half-full" label={t('contrast')} onPress={() => toggleSetting('highContrast')} isRTL={isRTL} />
                 <SettingRow active={appSettings.analyticsConsent} icon="chart-line" label={t('analyticsConsent')} onPress={() => toggleSetting('analyticsConsent')} isRTL={isRTL} />
+                <SettingRow active={appSettings.adsEnabled} icon="advertisements" label={t('adsEnabled')} onPress={() => toggleSetting('adsEnabled')} isRTL={isRTL} />
               </View>
               <View style={styles.block}>
                 <Text style={[styles.infoText, isRTL && styles.textRight]}>{t('analyticsConsentHint')}</Text>
@@ -2117,6 +2228,22 @@ function AppContent() {
             </ScrollView>
           )}
         </Animated.View>
+        {!appSettings.acceptedTerms ? (
+          <TermsConsentOverlay
+            title={t('termsConsent.title')}
+            body={t('termsConsent.body')}
+            linkLabel={t('termsConsent.openTerms')}
+            agreeLabel={t('termsConsent.agree')}
+            termsTitle={t('terms')}
+            termsItems={content.termsItems}
+            closeLabel={t('termsConsent.close')}
+            isRTL={isRTL}
+            termsPopupOpen={termsPopupOpen}
+            onOpenTerms={() => setTermsPopupOpen(true)}
+            onCloseTerms={() => setTermsPopupOpen(false)}
+            onAgree={acceptTerms}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -2131,7 +2258,7 @@ export default function App() {
 }
 
 function CategoryChip({ active, label, onPress, isRTL = false, color = '#fb4ecb' }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={label} style={[styles.categoryChip, active && styles.categoryChipActive, active && { backgroundColor: color, borderColor: color }]} onPress={onPress}><Text style={[styles.categoryChipText, active && styles.categoryChipTextActive, isRTL && styles.textRight]}>{label}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={label} style={[styles.categoryChip, { borderColor: active ? color : '#22f3ff', shadowColor: active ? color : '#22f3ff' }, active && styles.categoryChipActive, active && { backgroundColor: `${color}24` }]} onPress={onPress}><Text style={[styles.categoryChipText, active && styles.categoryChipTextActive, active && { color }, isRTL && styles.textRight]}>{label}</Text></Pressable>;
 }
 
 function formatChipLabel(label) {
@@ -2148,15 +2275,16 @@ function formatChipLabel(label) {
 
 function ChoiceChip({ active, label, onPress, isRTL = false, color = '#fb4ecb' }) {
   const displayLabel = formatChipLabel(label);
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={displayLabel} style={[styles.choiceChip, active && styles.choiceChipActive, active && { backgroundColor: color, borderColor: color }]} onPress={onPress}><Text style={[styles.choiceChipText, active && styles.choiceChipTextActive, isRTL && styles.textRight]}>{displayLabel}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={displayLabel} style={[styles.choiceChip, { borderColor: active ? color : '#22f3ff', shadowColor: active ? color : '#22f3ff' }, active && styles.choiceChipActive, active && { backgroundColor: `${color}24` }]} onPress={onPress}><Text style={[styles.choiceChipText, active && styles.choiceChipTextActive, active && { color }, isRTL && styles.textRight]}>{displayLabel}</Text></Pressable>;
 }
 
 function IconCircleButton({ icon, onPress, disabled = false, color = '#fb4ecb' }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={icon === 'plus' ? 'plus' : 'minus'} style={[styles.stepperButton, !disabled && { backgroundColor: color }, disabled && styles.stepperButtonDisabled]} onPress={onPress} disabled={disabled}><MaterialCommunityIcons color={disabled ? '#64748b' : '#f8fafc'} name={icon} size={18} /></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={icon === 'plus' ? 'plus' : 'minus'} style={[styles.stepperButton, !disabled && { borderColor: color, shadowColor: color }, disabled && styles.stepperButtonDisabled]} onPress={onPress} disabled={disabled}><MaterialCommunityIcons color={disabled ? '#64748b' : color} name={icon} size={18} /></Pressable>;
 }
 
 function IconLabelButton({ destructive, icon, label, onPress, isRTL = false, color }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.secondaryButton, color && !destructive && { backgroundColor: `${color}22`, borderColor: color }, destructive && styles.destructiveButton, isRTL && styles.rowReverse]} onPress={onPress}><MaterialCommunityIcons color={destructive ? '#fee2e2' : '#f8fafc'} name={icon} size={18} /><Text style={[styles.secondaryButtonText, destructive && styles.destructiveButtonText, isRTL && styles.textRight]}>{label}</Text></Pressable>;
+  const accent = destructive ? '#ff2f7d' : color ?? '#22f3ff';
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.secondaryButton, { borderColor: accent, shadowColor: accent }, destructive && styles.destructiveButton, isRTL && styles.rowReverse]} onPress={onPress}><MaterialCommunityIcons color={accent} name={icon} size={18} /><Text style={[styles.secondaryButtonText, destructive && styles.destructiveButtonText, { color: accent }, isRTL && styles.textRight]}>{label}</Text></Pressable>;
 }
 
 function MiniStat({ label, value, isRTL = false, color }) {
@@ -2164,7 +2292,7 @@ function MiniStat({ label, value, isRTL = false, color }) {
 }
 
 function SmallMenuButton({ icon, label, onPress, isRTL = false, compact = false, menuItem = false }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.smallMenuButton, compact && styles.smallMenuButtonCompact, menuItem && styles.smallMenuButtonMenuItem, (menuItem || isRTL) && isRTL && styles.rowReverse]} onPress={onPress}><MaterialCommunityIcons color="#cbd5e1" name={icon} size={18} /><Text style={[styles.smallMenuButtonText, menuItem && styles.smallMenuButtonMenuText, isRTL && styles.textRight]}>{label}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.smallMenuButton, compact && styles.smallMenuButtonCompact, menuItem && styles.smallMenuButtonMenuItem, (menuItem || isRTL) && isRTL && styles.rowReverse]} onPress={onPress}><MaterialCommunityIcons color="#22f3ff" name={icon} size={18} /><Text style={[styles.smallMenuButtonText, menuItem && styles.smallMenuButtonMenuText, isRTL && styles.textRight]}>{label}</Text></Pressable>;
 }
 
 function OnboardingMini({ icon, title, isRTL = false }) {
@@ -2180,6 +2308,56 @@ function InfoScreen({ title, items, onBack, onHome, extraAction, isRTL = false }
       </View>
       {extraAction ? extraAction : null}
     </ScrollView>
+  );
+}
+
+function TermsConsentOverlay({ title, body, linkLabel, agreeLabel, termsTitle, termsItems, closeLabel, isRTL = false, termsPopupOpen = false, onOpenTerms, onCloseTerms, onAgree }) {
+  return (
+    <View style={styles.termsGateOverlay}>
+      <View style={styles.termsGateBackdrop} />
+      <View style={styles.termsGateCard}>
+        <View style={[styles.termsGateIconRow, isRTL && styles.rowReverse]}>
+          <View style={styles.termsGateIcon}>
+            <MaterialCommunityIcons color="#fff7ed" name="file-document-check-outline" size={24} />
+          </View>
+          <Text style={[styles.termsGateTitle, isRTL && styles.textRight]}>{title}</Text>
+        </View>
+        <Text style={[styles.termsGateBody, isRTL && styles.textRight]}>{body}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={linkLabel} style={[styles.termsLinkButton, isRTL && styles.rowReverse]} onPress={onOpenTerms}>
+          <MaterialCommunityIcons color="#67e8f9" name="open-in-new" size={17} />
+          <Text style={[styles.termsLinkText, isRTL && styles.textRight]}>{linkLabel}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={agreeLabel || 'Agree and continue'} style={[styles.termsAgreeButton, isRTL && styles.rowReverse]} onPress={onAgree}>
+          <MaterialCommunityIcons color="#fff7ed" name="check-circle-outline" size={18} />
+          <Text style={[styles.primaryButtonText, isRTL && styles.textRight]}>{agreeLabel || 'Agree and continue'}</Text>
+        </Pressable>
+      </View>
+
+      {termsPopupOpen ? (
+        <View style={styles.termsPopupOverlay}>
+          <View style={styles.termsPopupCard}>
+            <View style={[styles.historyTop, isRTL && styles.rowReverse]}>
+              <Text style={[styles.termsPopupTitle, isRTL && styles.textRight]}>{termsTitle}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={closeLabel} style={styles.termsPopupClose} onPress={onCloseTerms}>
+                <MaterialCommunityIcons color="#f8fafc" name="close" size={20} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.termsPopupContent}>
+              {termsItems.map((item) => (
+                <View key={item} style={[styles.infoRow, isRTL && styles.rowReverse]}>
+                  <MaterialCommunityIcons color="#fb4ecb" name="check-circle-outline" size={18} />
+                  <Text style={[styles.infoText, isRTL && styles.textRight]}>{item}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable accessibilityRole="button" accessibilityLabel={closeLabel} style={styles.secondaryButton} onPress={onCloseTerms}>
+              <MaterialCommunityIcons color="#f8fafc" name="arrow-left" size={18} />
+              <Text style={styles.secondaryButtonText}>{closeLabel}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -2209,6 +2387,21 @@ const styles = StyleSheet.create({
   noticeSuccess: { backgroundColor: '#15803d' },
   noticeError: { backgroundColor: '#b91c1c' },
   noticeText: { color: '#fff7ed', fontSize: 13, fontFamily: FONT_BOLD, flex: 1 },
+  termsGateOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 80, alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: 18 },
+  termsGateBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.96)' },
+  termsGateCard: { width: '100%', maxWidth: 420, backgroundColor: '#080711', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(251,78,203,0.5)', padding: 18, gap: 14, shadowColor: '#fb4ecb', shadowOpacity: 0.22, shadowRadius: 22, shadowOffset: { width: 0, height: 14 }, elevation: 18 },
+  termsGateIconRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  termsGateIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#fb4ecb', alignItems: 'center', justifyContent: 'center' },
+  termsGateTitle: { flex: 1, color: '#fff7ff', fontSize: 22, lineHeight: 27, fontFamily: FONT_EXTRABOLD },
+  termsGateBody: { color: '#d6d0ec', fontSize: 14, lineHeight: 21, fontFamily: FONT_SEMIBOLD },
+  termsLinkButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#030305', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.52, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
+  termsLinkText: { color: '#a5f3fc', fontSize: 13, fontFamily: FONT_BOLD },
+  termsAgreeButton: { width: '100%', minHeight: 58, backgroundColor: '#030305', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.62, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  termsPopupOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 90, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(0,0,0,0.72)' },
+  termsPopupCard: { width: '100%', maxWidth: 440, maxHeight: '82%', backgroundColor: '#090914', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', padding: 16, gap: 12 },
+  termsPopupTitle: { flex: 1, color: '#f8fafc', fontSize: 20, fontFamily: FONT_EXTRABOLD },
+  termsPopupClose: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#030305', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.52, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
+  termsPopupContent: { gap: 12, paddingVertical: 4, paddingBottom: 12 },
   heroCard: { backgroundColor: '#000000', borderRadius: 28, padding: 20, borderWidth: 1, borderColor: '#000000', gap: 6 },
   homeHeroCard: { position: 'relative', overflow: 'hidden', borderRadius: 32, padding: 20, gap: 14, backgroundColor: '#0d0b17', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   homeHeroGlowPink: { position: 'absolute', top: -40, left: -36, width: 150, height: 150, borderRadius: 999, backgroundColor: 'rgba(255,56,184,0.18)' },
@@ -2230,20 +2423,20 @@ const styles = StyleSheet.create({
   homePartyModeTitle: { color: '#fff5ff', fontSize: 18, fontFamily: FONT_EXTRABOLD },
   homePartyModeCaption: { color: '#ff92d6', fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', fontFamily: FONT_BOLD },
   homeTopActions: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, zIndex: 20 },
-  hamburgerButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#11111a', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  hamburgerButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#030305', borderWidth: 1.5, borderColor: '#22f3ff', alignItems: 'center', justifyContent: 'center', shadowColor: '#22f3ff', shadowOpacity: 0.58, shadowRadius: 14, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
   homeMenuPanel: { position: 'absolute', top: 70, right: 18, width: 230, zIndex: 25, backgroundColor: '#0d0b17', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 20, padding: 10, gap: 8, shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
   homeMenuPanelRTL: { left: 18, right: undefined },
-  homeGameGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 14 },
+  homeGameGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   quickLinks: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   onboardingCard: { backgroundColor: '#000000', borderRadius: 24, padding: 16, borderWidth: 1, borderColor: '#000000', gap: 14 },
   onboardingCardNeon: { backgroundColor: '#0d0b17', borderColor: 'rgba(255,255,255,0.08)' },
   onboardingRow: { flexDirection: 'row', gap: 10 },
   onboardingMini: { flex: 1, backgroundColor: '#000000', borderRadius: 18, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', gap: 8 },
   onboardingMiniText: { color: '#e2e8f0', fontSize: 13, fontFamily: FONT_BOLD },
-  smallMenuButton: { minWidth: '22%', flexGrow: 1, backgroundColor: '#11111a', borderRadius: 20, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  smallMenuButton: { minWidth: '22%', flexGrow: 1, backgroundColor: '#030305', borderRadius: 20, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.48, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
   smallMenuButtonCompact: { minWidth: 0, flexGrow: 0, flexDirection: 'row', alignSelf: 'flex-start', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
   smallMenuButtonMenuItem: { minWidth: 0, width: '100%', flexGrow: 0, flexDirection: 'row', justifyContent: 'flex-start', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12 },
-  smallMenuButtonText: { color: '#d6d0ec', fontSize: 12, fontFamily: FONT_BOLD },
+  smallMenuButtonText: { color: '#22f3ff', fontSize: 12, fontFamily: FONT_BOLD },
   smallMenuButtonMenuText: { flex: 1, fontSize: 13 },
   focusCard: { backgroundColor: '#000000', borderRadius: 24, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   focusIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
@@ -2257,9 +2450,9 @@ const styles = StyleSheet.create({
   categoryRow: { flexDirection: 'row', gap: 8 },
   signalChip: { backgroundColor: '#000000', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   signalChipText: { color: '#e2e8f0', fontSize: 12, fontFamily: FONT_SEMIBOLD },
-  categoryChip: { backgroundColor: '#000000', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#000000' },
-  categoryChipActive: { backgroundColor: '#fb4ecb' },
-  categoryChipText: { color: '#cbd5e1', fontSize: 13, fontFamily: FONT_SEMIBOLD },
+  categoryChip: { backgroundColor: '#030305', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.4, shadowRadius: 9, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+  categoryChipActive: { shadowOpacity: 0.64, shadowRadius: 13, elevation: 10 },
+  categoryChipText: { color: '#22f3ff', fontSize: 13, fontFamily: FONT_SEMIBOLD },
   categoryChipTextActive: { color: '#fff7ed', fontFamily: FONT_SEMIBOLD },
   optionLine: { gap: 10 },
   optionLabel: { color: '#cbd5e1', fontSize: 13, fontFamily: FONT_SEMIBOLD },
@@ -2267,16 +2460,16 @@ const styles = StyleSheet.create({
   inlineList: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   narrativeCard: { backgroundColor: '#000000', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12 },
   narrativeText: { color: '#e2e8f0', fontSize: 14, lineHeight: 20, fontFamily: FONT_SEMIBOLD },
-  choiceChip: { backgroundColor: '#000000', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#000000' },
-  choiceChipActive: { backgroundColor: '#334155' },
-  choiceChipText: { color: '#cbd5e1', fontSize: 13, fontFamily: FONT_BOLD },
+  choiceChip: { backgroundColor: '#030305', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.4, shadowRadius: 9, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+  choiceChipActive: { shadowOpacity: 0.64, shadowRadius: 13, elevation: 10 },
+  choiceChipText: { color: '#22f3ff', fontSize: 13, fontFamily: FONT_BOLD },
   choiceChipTextActive: { color: '#f8fafc', fontFamily: FONT_BOLD },
   roleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#000000', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12 },
   roleLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   roleLabel: { color: '#e2e8f0', fontSize: 16, fontFamily: FONT_SEMIBOLD },
   stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepperButton: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#334155', alignItems: 'center', justifyContent: 'center' },
-  stepperButtonDisabled: { backgroundColor: '#1f2937' },
+  stepperButton: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#030305', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.56, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
+  stepperButtonDisabled: { backgroundColor: '#090912', borderColor: '#334155', shadowOpacity: 0.08 },
   smallInput: { width: 58, backgroundColor: '#000000', color: '#f8fafc', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, textAlign: 'center', fontFamily: FONT_BOLD, fontSize: 16 },
   targetRow: { flexDirection: 'row', gap: 10 },
   targetInput: { flex: 1, backgroundColor: '#000000', color: '#f8fafc', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, fontFamily: FONT_SEMIBOLD },
@@ -2323,7 +2516,9 @@ const styles = StyleSheet.create({
   premiumHeroTitle: { color: '#fff7ff', fontSize: 30, lineHeight: 34, fontFamily: FONT_EXTRABOLD },
   premiumHeroText: { color: '#e9d5ff', fontSize: 14, lineHeight: 21, fontFamily: FONT_SEMIBOLD },
   premiumPlans: { flexDirection: 'row', gap: 12 },
+  premiumPlansSingle: { flexDirection: 'row' },
   premiumPlanCard: { flex: 1, minHeight: 150, backgroundColor: '#070711', borderRadius: 22, paddingVertical: 18, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(103,232,249,0.34)', gap: 9 },
+  premiumPlanSingle: { maxWidth: 520 },
   premiumPlanFeatured: { borderColor: '#fb4ecb', shadowColor: '#fb4ecb', shadowOpacity: 0.24, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
   priceTagBlue: { color: '#a5f3fc' },
   premiumBenefitRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#070711', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
@@ -2334,13 +2529,14 @@ const styles = StyleSheet.create({
   compareLabel: { flex: 1, color: '#e2e8f0', fontSize: 13, fontFamily: FONT_SEMIBOLD },
   compareValue: { minWidth: 74, color: '#94a3b8', fontSize: 12, fontFamily: FONT_BOLD, textAlign: 'center' },
   compareValueHighlight: { color: '#f8fafc' },
-  secondaryButton: { flex: 1, backgroundColor: '#000000', borderRadius: 18, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', borderWidth: 1, borderColor: '#000000' },
-  secondaryButtonText: { color: '#f8fafc', fontFamily: FONT_BOLD },
-  destructiveButton: { backgroundColor: '#7f1d1d' },
-  destructiveButtonText: { color: '#fee2e2' },
-  primaryButton: { flex: 1, backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  cardActionButton: { minWidth: 180, alignSelf: 'stretch', backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.26, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  primaryButtonText: { color: '#fff7ed', fontFamily: FONT_BOLD, fontSize: 16 },
+  secondaryButton: { flex: 1, backgroundColor: '#030305', borderRadius: 18, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: 8 },
+  secondaryButtonText: { color: '#22f3ff', fontFamily: FONT_BOLD },
+  destructiveButton: { backgroundColor: '#050205', borderColor: '#ff2f7d', shadowColor: '#ff2f7d' },
+  destructiveButtonText: { color: '#ff2f7d' },
+  primaryButton: { flex: 1, backgroundColor: '#030305', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.64, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  primaryButtonDisabled: { opacity: 0.72 },
+  cardActionButton: { minWidth: 180, alignSelf: 'stretch', backgroundColor: '#030305', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', gap: 8, flexDirection: 'row', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.62, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  primaryButtonText: { color: '#22f3ff', fontFamily: FONT_BOLD, fontSize: 16 },
   buttonDisabled: { opacity: 0.45 },
   revealScreen: { flex: 1, padding: 18, gap: 18, justifyContent: 'space-between' },
   revealCounter: { alignItems: 'center' },
@@ -2348,13 +2544,13 @@ const styles = StyleSheet.create({
   revealBadge: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   revealBadgeText: { color: '#e2e8f0', fontSize: 12, fontFamily: FONT_BOLD },
   revealPlayerName: { color: '#f8fafc', fontSize: 28, fontFamily: FONT_EXTRABOLD, textAlign: 'center' },
-  holdButton: { width: '100%', backgroundColor: '#000000', borderRadius: 24, paddingHorizontal: 18, paddingVertical: 32, alignItems: 'center', gap: 14, borderWidth: 1, borderColor: '#1f2a44' },
+  holdButton: { width: '100%', backgroundColor: '#030305', borderRadius: 24, paddingHorizontal: 18, paddingVertical: 32, alignItems: 'center', gap: 14, borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.5, shadowRadius: 14, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
   holdButtonText: { color: '#cbd5e1', fontSize: 15, fontFamily: FONT_SEMIBOLD },
   revealContent: { alignItems: 'center', gap: 10 },
   revealRoleText: { color: '#f8fafc', fontSize: 32, fontFamily: FONT_EXTRABOLD, textAlign: 'center' },
   secretWordText: { color: '#fbbf24', fontSize: 24, fontFamily: FONT_BOLD, textAlign: 'center', textTransform: 'capitalize' },
-  nextButton: { alignSelf: 'center', minWidth: 170, backgroundColor: '#fb4ecb', borderRadius: 18, paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', shadowColor: '#fb4ecb', shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  nextButtonText: { color: '#fff7ed', fontSize: 15, fontFamily: FONT_BOLD },
+  nextButton: { alignSelf: 'center', minWidth: 170, backgroundColor: '#030305', borderRadius: 18, paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.62, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  nextButtonText: { color: '#22f3ff', fontSize: 15, fontFamily: FONT_BOLD },
   finishActions: { flexDirection: 'row', gap: 10 },
   wordBanner: { backgroundColor: '#000000', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', gap: 6, flexDirection: 'row' },
   wordBannerText: { color: '#fbbf24', fontSize: 18, fontFamily: FONT_BOLD, textTransform: 'capitalize' },
@@ -2365,7 +2561,7 @@ const styles = StyleSheet.create({
   scoreValue: { minWidth: 32, color: '#f8fafc', fontSize: 20, fontFamily: FONT_EXTRABOLD, textAlign: 'center' },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   infoText: { flex: 1, color: '#e2e8f0', fontSize: 14, lineHeight: 20, fontFamily: FONT_REGULAR },
-  settingRow: { backgroundColor: '#000000', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  settingRow: { backgroundColor: '#030305', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1.5, borderColor: '#22f3ff', shadowColor: '#22f3ff', shadowOpacity: 0.34, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
   settingLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   settingLabel: { color: '#f8fafc', fontSize: 15, fontFamily: FONT_SEMIBOLD },
   historyCard: { backgroundColor: '#000000', borderRadius: 22, padding: 16, gap: 8, borderWidth: 1, borderColor: '#000000' },

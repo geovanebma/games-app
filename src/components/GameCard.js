@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-function GameCardComponent({ game, onPress, isRTL = false, variant = 'list' }) {
+function GameCardComponent({ game, onPress, isRTL = false, variant = 'list', width, compact = false }) {
   const isGrid = variant === 'grid';
 
   return (
@@ -13,6 +13,8 @@ function GameCardComponent({ game, onPress, isRTL = false, variant = 'list' }) {
       style={[
         styles.card,
         isGrid ? styles.gridCard : styles.listCard,
+        isGrid && width ? { width } : null,
+        isGrid && compact && styles.gridCardCompact,
         isRTL && styles.cardRtl,
         {
           borderColor: `${game.themeColor}99`,
@@ -22,14 +24,14 @@ function GameCardComponent({ game, onPress, isRTL = false, variant = 'list' }) {
       ]}
     >
       <View style={[styles.glowOrb, { backgroundColor: `${game.themeColor}22` }]} />
-      <View style={[styles.iconWrap, isGrid && styles.iconWrapGrid, { backgroundColor: `${game.themeColor}22`, borderColor: `${game.themeColor}77` }]}>
-        <MaterialCommunityIcons color="#fff7ed" name={game.icon} size={isGrid ? 30 : 24} />
+      <View style={[styles.iconWrap, isGrid && styles.iconWrapGrid, isGrid && compact && styles.iconWrapGridCompact, { backgroundColor: `${game.themeColor}22`, borderColor: `${game.themeColor}77` }]}>
+        <MaterialCommunityIcons color="#fff7ed" name={game.icon} size={isGrid ? (compact ? 24 : 30) : 24} />
       </View>
       <View style={[styles.textWrap, isRTL && styles.textWrapRtl, isGrid && styles.textWrapGrid]}>
-        <Text numberOfLines={2} style={[styles.title, isGrid && styles.titleGrid, isRTL && styles.textRtl]}>
+        <Text maxFontSizeMultiplier={1.08} numberOfLines={2} style={[styles.title, isGrid && styles.titleGrid, isGrid && compact && styles.titleGridCompact, isRTL && styles.textRtl]}>
           {game.title}
         </Text>
-        <Text numberOfLines={2} style={[styles.tag, isGrid && styles.tagGrid, isRTL && styles.textRtl]}>
+        <Text maxFontSizeMultiplier={1.08} numberOfLines={2} style={[styles.tag, isGrid && styles.tagGrid, isGrid && compact && styles.tagGridCompact, isRTL && styles.textRtl]}>
           {game.homeTag}
         </Text>
       </View>
@@ -44,11 +46,11 @@ const styles = StyleSheet.create({
   card: {
     overflow: 'hidden',
     borderRadius: 24,
-    borderWidth: 1,
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    borderWidth: 1.5,
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
   },
   listCard: {
     minHeight: 96,
@@ -67,6 +69,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     backgroundColor: '#0d0b17',
+  },
+  gridCardCompact: {
+    minHeight: 178,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 22,
   },
   cardRtl: {
     flexDirection: 'row-reverse',
@@ -92,6 +100,11 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 18,
   },
+  iconWrapGridCompact: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+  },
   textWrap: {
     flex: 1,
     gap: 4,
@@ -113,6 +126,10 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     textTransform: 'uppercase',
   },
+  titleGridCompact: {
+    fontSize: 16,
+    lineHeight: 19,
+  },
   tag: {
     color: '#e2e8f0',
     fontSize: 13,
@@ -122,6 +139,10 @@ const styles = StyleSheet.create({
     color: '#d9d2ef',
     fontSize: 12,
     lineHeight: 17,
+  },
+  tagGridCompact: {
+    fontSize: 10,
+    lineHeight: 14,
   },
   textRtl: {
     textAlign: 'right',

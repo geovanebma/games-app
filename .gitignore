@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# private publishing/payment notes
+/play-store-publication-pack/payments/
+
 # typescript
 *.tsbuildinfo
 

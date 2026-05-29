@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Party Games",
+    "name": "Party Games Offline",
     "slug": "party-games-apk",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/party-games-logo.png",
+      "image": "./assets/loading-splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },
@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.geovane.partygames",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#020617"

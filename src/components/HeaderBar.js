@@ -8,11 +8,11 @@ function HeaderBarComponent({ title, onBack, onHome, onHelp, isRTL = false, back
       <View style={[styles.leftActions, isRTL && styles.leftActionsRtl]}>
         {onHelp ? (
           <Pressable accessibilityRole="button" accessibilityLabel={helpLabel} style={styles.navButton} onPress={onHelp}>
-            <MaterialCommunityIcons color="#fff7ed" name="help-circle-outline" size={18} />
+            <MaterialCommunityIcons color="#22f3ff" name="help-circle-outline" size={18} />
           </Pressable>
         ) : null}
         <Pressable accessibilityRole="button" accessibilityLabel={backLabel} style={styles.navButton} onPress={onBack}>
-          <MaterialCommunityIcons color="#fff7ed" name={isRTL ? 'arrow-right' : 'arrow-left'} size={18} />
+          <MaterialCommunityIcons color="#22f3ff" name={isRTL ? 'arrow-right' : 'arrow-left'} size={18} />
         </Pressable>
       </View>
       <Text style={styles.headerTitle} numberOfLines={1}>
@@ -20,7 +20,7 @@ function HeaderBarComponent({ title, onBack, onHome, onHelp, isRTL = false, back
       </Text>
       <View style={[styles.rightActions, isRTL && styles.rightActionsRtl]}>
         <Pressable accessibilityRole="button" accessibilityLabel={homeLabel} style={styles.navButton} onPress={onHome}>
-          <MaterialCommunityIcons color="#fff7ed" name="home-outline" size={18} />
+          <MaterialCommunityIcons color="#22f3ff" name="home-outline" size={18} />
         </Pressable>
       </View>
     </View>
@@ -63,11 +63,16 @@ const styles = StyleSheet.create({
   navButton: {
     width: 42,
     height: 42,
-    backgroundColor: '#11111a',
+    backgroundColor: '#030305',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1.5,
+    borderColor: '#22f3ff',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#22f3ff',
+    shadowOpacity: 0.54,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
 });
